@@ -581,6 +581,42 @@ describe('cats routes runtime CRUD', { concurrency: false }, () => {
     assert.match(patchBody.error, /provider "claude-oauth" not found/i);
   });
 
+  it('PATCH /api/cats/:id resets cli defaults when switching provider families', async () => {
+    const projectRoot = createProjectRoot();
+    process.env.CAT_TEMPLATE_PATH = join(projectRoot, 'cat-template.json');
+
+    const Fastify = (await import('fastify')).default;
+    const { catsRoutes } = await import('../dist/routes/cats.js');
+
+    const app = Fastify();
+    await app.register(catsRoutes);
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: '/api/cats/opus',
+      headers: {
+        'content-type': 'application/json',
+        'x-cat-cafe-user': 'codex',
+      },
+      body: JSON.stringify({
+        client: 'openai',
+        providerProfileId: 'codex',
+        defaultModel: 'gpt-5.4',
+      }),
+    });
+    assert.equal(patchRes.statusCode, 200);
+
+    const runtimeCatalog = JSON.parse(readFileSync(join(projectRoot, '.cat-cafe', 'cat-catalog.json'), 'utf-8'));
+    const breed = runtimeCatalog.breeds.find((item) => item.catId === 'opus');
+    assert.ok(breed, 'opus breed should exist in runtime catalog');
+    assert.deepEqual(breed.variants[0]?.cli, {
+      command: 'codex',
+      outputFormat: 'json',
+    });
+
+    await app.close();
+  });
+
   it('POST /api/cats allows api_key bindings with different protocol than client default', async () => {
     const projectRoot = createProjectRoot();
     process.env.CAT_TEMPLATE_PATH = join(projectRoot, 'cat-template.json');

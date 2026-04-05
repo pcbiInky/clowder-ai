@@ -8,6 +8,7 @@ import { describe, it } from 'node:test';
 const {
   loadCatConfig,
   getDefaultVariant,
+  getCatEffort,
   toFlatConfigs,
   toAllCatConfigs,
   findBreedByMention,
@@ -332,6 +333,32 @@ describe('cat-config-loader', () => {
       const variant = getDefaultVariant(config.breeds[0]);
       assert.equal(variant.id, 'opus-default');
       assert.equal(variant.clientId, 'anthropic');
+    });
+  });
+
+  describe('getCatEffort', () => {
+    it('falls back to xhigh when an openai variant carries anthropic-only max effort', () => {
+      const cfg = validConfig();
+      cfg.breeds[0].variants[0].provider = 'openai';
+      cfg.breeds[0].variants[0].defaultModel = 'gpt-5.4';
+      cfg.breeds[0].variants[0].cli = { command: 'codex', outputFormat: 'json', effort: 'max' };
+
+      const path = writeTempConfig(cfg);
+      const config = loadCatConfig(path);
+
+      assert.equal(getCatEffort('opus', config), 'xhigh');
+    });
+
+    it('preserves valid openai effort overrides', () => {
+      const cfg = validConfig();
+      cfg.breeds[0].variants[0].provider = 'openai';
+      cfg.breeds[0].variants[0].defaultModel = 'gpt-5.4';
+      cfg.breeds[0].variants[0].cli = { command: 'codex', outputFormat: 'json', effort: 'high' };
+
+      const path = writeTempConfig(cfg);
+      const config = loadCatConfig(path);
+
+      assert.equal(getCatEffort('opus', config), 'high');
     });
   });
 
