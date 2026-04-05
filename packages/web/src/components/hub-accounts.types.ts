@@ -1,7 +1,14 @@
 export type ProfileMode = 'subscription' | 'api_key';
 export type ProfileAuthType = 'oauth' | 'api_key';
 export type ProfileKind = 'builtin' | 'api_key';
-export type BuiltinAccountClient = 'anthropic' | 'openai' | 'google' | 'dare' | 'opencode';
+export type BuiltinAccountClient = 'anthropic' | 'openai' | 'google' | 'dare' | 'trae' | 'opencode';
+export type BootstrapBindingMode = 'oauth' | 'api_key' | 'skip';
+
+export interface BootstrapBinding {
+  enabled: boolean;
+  mode: BootstrapBindingMode;
+  accountRef?: string;
+}
 
 export interface ProfileItem {
   id: string;
@@ -12,7 +19,8 @@ export interface ProfileItem {
   kind: ProfileKind;
   builtin: boolean;
   mode: ProfileMode;
-  clientId?: BuiltinAccountClient;
+  client?: BuiltinAccountClient;
+  protocol?: string;
   baseUrl?: string;
   models?: string[];
   modelOverride?: string | null;
@@ -22,8 +30,10 @@ export interface ProfileItem {
   updatedAt: string;
 }
 
-export interface AccountsResponse {
+export interface ProviderProfilesResponse {
   projectPath: string;
+  activeProfileId: string | null;
+  bootstrapBindings: Partial<Record<BuiltinAccountClient, BootstrapBinding>>;
   providers: ProfileItem[];
 }
 

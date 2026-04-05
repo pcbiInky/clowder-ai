@@ -3102,6 +3102,66 @@ describe('invokeSingleCat audit events (P1 fix)', () => {
     assert.equal(callbackEnv.OPENAI_API_BASE, undefined);
   });
 
+  it('Trae builtin bindings keep openai protocol hint without opting into Codex auth mode', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'trae-builtin-callback-env-'));
+    const apiDir = join(root, 'packages', 'api');
+    await mkdir(apiDir, { recursive: true });
+    await writeFile(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - "packages/*"\n', 'utf-8');
+    const templateRaw = await readFile(join(process.cwd(), '..', '..', 'cat-template.json'), 'utf-8');
+    await writeFile(join(root, 'cat-template.json'), templateRaw, 'utf-8');
+
+    const registrySnapshot = catRegistry.getAllConfigs();
+    const originalConfig = catRegistry.tryGet('codex')?.config;
+    assert.ok(originalConfig, 'codex config should exist in registry');
+    const boundCatId = 'trae-builtin-test';
+    catRegistry.register(boundCatId, {
+      ...originalConfig,
+      id: boundCatId,
+      mentionPatterns: [`@${boundCatId}`],
+      provider: 'trae',
+      providerProfileId: 'trae',
+      defaultModel: 'GLM-5',
+    });
+
+    const optionsSeen = [];
+    const service = {
+      async *invoke(_prompt, options) {
+        optionsSeen.push(options ?? {});
+        yield { type: 'done', catId: boundCatId, timestamp: Date.now() };
+      },
+    };
+
+    const deps = makeDeps();
+    const previousCwd = process.cwd();
+    try {
+      process.chdir(apiDir);
+      await collect(
+        invokeSingleCat(deps, {
+          catId: boundCatId,
+          service,
+          prompt: 'test',
+          userId: 'user-trae-builtin',
+          threadId: 'thread-trae-builtin',
+          isLastCat: true,
+        }),
+      );
+    } finally {
+      process.chdir(previousCwd);
+      catRegistry.reset();
+      for (const [id, config] of Object.entries(registrySnapshot)) {
+        catRegistry.register(id, config);
+      }
+      await rm(root, { recursive: true, force: true });
+    }
+
+    const callbackEnv = optionsSeen[0]?.callbackEnv ?? {};
+    assert.equal(callbackEnv.CAT_CAFE_EFFECTIVE_PROTOCOL, 'openai');
+    assert.equal(callbackEnv.CODEX_AUTH_MODE, undefined);
+    assert.equal(callbackEnv.OPENAI_API_KEY, undefined);
+    assert.equal(callbackEnv.OPENAI_BASE_URL, undefined);
+    assert.equal(callbackEnv.OPENAI_API_BASE, undefined);
+  });
+
   it('F127: ignores legacy api_key protocol metadata when the member explicitly selected the client', async () => {
     const { createProviderProfile } = await import('./helpers/create-test-account.js');
     const root = await mkdtemp(join(tmpdir(), 'f127-bound-mismatch-'));

@@ -1,35 +1,39 @@
-import type { BuiltinAccountClient, ProfileItem } from './hub-accounts.types';
+import type { BuiltinAccountClient, ProfileItem } from './hub-provider-profiles.types';
 
 const FALLBACK_BUILTIN_PROFILE_SPECS: Array<{
-  clientId: BuiltinAccountClient;
+  client: BuiltinAccountClient;
   id: string;
   displayName: string;
   models: string[];
 }> = [
-  { clientId: 'anthropic', id: 'claude', displayName: 'Claude (OAuth)', models: [] },
-  { clientId: 'openai', id: 'codex', displayName: 'Codex (OAuth)', models: [] },
-  { clientId: 'google', id: 'gemini', displayName: 'Gemini (OAuth)', models: [] },
-  { clientId: 'dare', id: 'dare', displayName: 'Dare (client-auth)', models: [] },
-  { clientId: 'opencode', id: 'opencode', displayName: 'OpenCode (client-auth)', models: [] },
+  { client: 'anthropic', id: 'claude', displayName: 'Claude (OAuth)', models: [] },
+  { client: 'openai', id: 'codex', displayName: 'Codex (OAuth)', models: [] },
+  { client: 'google', id: 'gemini', displayName: 'Gemini (OAuth)', models: [] },
+  { client: 'dare', id: 'dare', displayName: 'Dare (client-auth)', models: [] },
+  { client: 'trae', id: 'trae', displayName: 'Trae (client-auth)', models: [] },
+  { client: 'opencode', id: 'opencode', displayName: 'OpenCode (client-auth)', models: [] },
 ];
 
 function inferBuiltinClient(profile: ProfileItem): BuiltinAccountClient | undefined {
-  if (profile.clientId) return profile.clientId;
-  if (profile.oauthLikeClient === 'dare' || profile.oauthLikeClient === 'opencode') return profile.oauthLikeClient;
+  if (profile.client) return profile.client;
+  if (profile.oauthLikeClient === 'dare' || profile.oauthLikeClient === 'trae' || profile.oauthLikeClient === 'opencode') {
+    return profile.oauthLikeClient;
+  }
   const normalizedId = `${profile.id} ${profile.provider ?? ''} ${profile.displayName} ${profile.name}`.toLowerCase();
   if (normalizedId.includes('claude')) return 'anthropic';
   if (normalizedId.includes('codex')) return 'openai';
   if (normalizedId.includes('gemini')) return 'google';
   if (normalizedId.includes('dare')) return 'dare';
+  if (normalizedId.includes('trae')) return 'trae';
   if (normalizedId.includes('opencode')) return 'opencode';
   return undefined;
 }
 
-export function ensureBuiltinAccounts(profiles: ProfileItem[]): ProfileItem[] {
+export function ensureBuiltinProviderProfiles(profiles: ProfileItem[]): ProfileItem[] {
   const normalized = profiles.map((profile) => {
     if (!profile.builtin) return profile;
-    const builtinClient = inferBuiltinClient(profile);
-    return builtinClient ? { ...profile, clientId: builtinClient } : profile;
+    const client = inferBuiltinClient(profile);
+    return client ? { ...profile, client } : profile;
   });
 
   const seenBuiltinClients = new Set(
@@ -40,21 +44,24 @@ export function ensureBuiltinAccounts(profiles: ProfileItem[]): ProfileItem[] {
   );
 
   for (const spec of FALLBACK_BUILTIN_PROFILE_SPECS) {
-    if (seenBuiltinClients.has(spec.clientId)) continue;
+    if (seenBuiltinClients.has(spec.client)) continue;
     normalized.push({
       id: spec.id,
+      provider: spec.id,
       displayName: spec.displayName,
       name: spec.displayName,
       authType: 'oauth',
       kind: 'builtin',
       builtin: true,
       mode: 'subscription',
-      clientId: spec.clientId,
+      client: spec.client,
       models: spec.models,
       hasApiKey: false,
       createdAt: '',
       updatedAt: '',
-      ...(spec.clientId === 'dare' || spec.clientId === 'opencode' ? { oauthLikeClient: spec.clientId } : {}),
+      ...(spec.client === 'dare' || spec.client === 'trae' || spec.client === 'opencode'
+        ? { oauthLikeClient: spec.client }
+        : {}),
     });
   }
 
@@ -71,6 +78,8 @@ export function builtinClientLabel(client?: BuiltinAccountClient): string {
       return 'Gemini';
     case 'dare':
       return 'Dare';
+    case 'trae':
+      return 'Trae';
     case 'opencode':
       return 'OpenCode';
     default:

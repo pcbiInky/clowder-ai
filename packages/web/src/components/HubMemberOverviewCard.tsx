@@ -8,45 +8,48 @@ function safeAvatarSrc(value: string | null | undefined): string | null {
   return null;
 }
 
-function humanizeClientId(clientId: string) {
-  if (clientId === 'openai') return 'OpenAI';
-  if (clientId === 'anthropic') return 'Anthropic';
-  if (clientId === 'google') return 'Gemini';
-  if (clientId === 'dare') return 'Dare';
-  if (clientId === 'opencode') return 'OpenCode';
-  if (clientId === 'antigravity') return 'Antigravity';
-  return clientId;
+function humanizeProvider(provider: string) {
+  if (provider === 'openai') return 'OpenAI';
+  if (provider === 'anthropic') return 'Anthropic';
+  if (provider === 'google') return 'Gemini';
+  if (provider === 'dare') return 'Dare';
+  if (provider === 'trae') return 'Trae';
+  if (provider === 'opencode') return 'OpenCode';
+  if (provider === 'antigravity') return 'Antigravity';
+  return provider;
 }
 
 function clientRuntimeLabel(cat: CatData, configCat?: CatConfig) {
-  const accountRef = (cat.accountRef ?? '').toLowerCase();
+  const accountRef = (cat.accountRef ?? cat.providerProfileId ?? '').toLowerCase();
   if (accountRef.includes('claude')) return 'Claude';
   if (accountRef.includes('codex')) return 'Codex';
   if (accountRef.includes('gemini')) return 'Gemini';
   if (accountRef.includes('opencode')) return 'OpenCode';
   if (accountRef.includes('dare')) return 'Dare';
-  if (cat.clientId === 'antigravity') return 'Antigravity';
-  if (cat.source === 'runtime' && cat.clientId === 'openai') return 'OpenAI-Compatible';
-  return humanizeClientId(configCat?.clientId ?? cat.clientId);
+  if (accountRef.includes('trae')) return 'Trae';
+  if (cat.provider === 'antigravity') return 'Antigravity';
+  if (cat.source === 'runtime' && cat.provider === 'openai') return 'OpenAI-Compatible';
+  return humanizeProvider(configCat?.provider ?? cat.provider);
 }
 
 function accountSummary(cat: CatData) {
-  const accountRef = cat.accountRef?.trim() ?? '';
-  if (!accountRef) return humanizeClientId(cat.clientId);
+  const accountRef = cat.accountRef?.trim() ?? cat.providerProfileId?.trim() ?? '';
+  if (!accountRef) return humanizeProvider(cat.provider);
   if (
     accountRef === 'claude' ||
     accountRef === 'codex' ||
-    accountRef === 'gemini' ||
-    accountRef === 'dare' ||
-    accountRef === 'opencode'
+    accountRef === 'gemini'
   ) {
     return '内置 OAuth 账号';
+  }
+  if (accountRef === 'dare' || accountRef === 'trae' || accountRef === 'opencode') {
+    return '内置 client-auth 账号';
   }
   return `API Key · ${accountRef}`;
 }
 
 function getMetaSummary(cat: CatData, configCat?: CatConfig) {
-  if (cat.clientId === 'antigravity') {
+  if (cat.provider === 'antigravity') {
     return `Antigravity · ${configCat?.model ?? cat.defaultModel} · CLI Bridge`;
   }
 
@@ -102,7 +105,6 @@ export function HubCoCreatorOverviewCard({ coCreator, onEdit }: { coCreator: CoC
           >
             {avatarSrc ? (
               // biome-ignore lint/performance/noImgElement: co-creator avatar may be runtime upload URL
-              // eslint-disable-next-line @next/next/no-img-element
               <img src={avatarSrc} alt={`${coCreator.name} avatar`} className="h-full w-full object-cover" />
             ) : (
               'ME'
@@ -203,18 +205,7 @@ export function HubMemberOverviewCard({
         </button>
       </div>
 
-      <p className="mt-2.5 text-[13px] text-[#8A776B]">
-        {getMetaSummary(cat, configCat)}
-        {cat.adapterMode ? (
-          <span
-            className={`ml-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold ${
-              cat.adapterMode === 'acp' ? 'bg-[#E8F5E9] text-[#4CAF50]' : 'bg-slate-100 text-slate-500'
-            }`}
-          >
-            {cat.adapterMode.toUpperCase()}
-          </span>
-        ) : null}
-      </p>
+      <p className="mt-2.5 text-[13px] text-[#8A776B]">{getMetaSummary(cat, configCat)}</p>
 
       <p className="mt-2 text-[13px] text-[#9D7BC7]">{formatMentionPreview(cat.mentionPatterns)}</p>
     </section>

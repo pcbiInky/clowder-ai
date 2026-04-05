@@ -3,18 +3,22 @@
  * 三只 AI 猫猫的类型定义和配置
  */
 
-import type { CliConfig, ContextBudget } from './cat-breed.js';
+import type { ContextBudget } from './cat-breed.js';
 import type { CatId, SessionId } from './ids.js';
 import { createCatId } from './ids.js';
 
 /**
- * CLI client identity used to invoke a cat (e.g. 'anthropic' → claude CLI, 'openai' → codex CLI).
- * Renamed from CatProvider in F340 P5.
+ * AI provider behind a cat
  */
-export type ClientId = 'anthropic' | 'openai' | 'google' | 'dare' | 'antigravity' | 'opencode' | 'a2a';
-
-/** @deprecated F340: Use {@link ClientId} instead. Kept as alias for backward compatibility. */
-export type CatProvider = ClientId;
+export type CatProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'google'
+  | 'dare'
+  | 'trae'
+  | 'antigravity'
+  | 'opencode'
+  | 'a2a';
 
 /**
  * Cat status in the system
@@ -42,11 +46,9 @@ export interface CatConfig {
   readonly color: CatColor;
   readonly mentionPatterns: readonly string[];
   readonly accountRef?: string;
-  /** F340 P5: CLI client identity (renamed from `provider`). */
-  readonly clientId: ClientId;
+  readonly provider: CatProvider;
   readonly defaultModel: string;
   readonly mcpSupport: boolean;
-  readonly cli?: CliConfig;
   readonly commandArgs?: readonly string[];
   readonly contextBudget?: ContextBudget;
   readonly roleDescription: string;
@@ -69,9 +71,8 @@ export interface CatConfig {
   readonly sessionChain?: boolean;
   /** F127: Extra CLI --config key=value pairs passed to the client at invocation time. */
   readonly cliConfigArgs?: readonly string[];
-  /** F340 P5: Model provider name for api_key routing (renamed from `ocProviderName`).
-   *  e.g. "openrouter", "maas", "deepseek". Runtime assembles provider/model for the -m flag. */
-  readonly provider?: string;
+  /** F189: OpenCode custom provider name for api_key routing (runtime assembles provider/model). */
+  readonly ocProviderName?: string;
 }
 
 /**
@@ -103,7 +104,7 @@ export const CAT_CONFIGS: Record<string, CatConfig> = {
       secondary: '#E8DFF5',
     },
     mentionPatterns: ['@opus', '@布偶猫', '@布偶', '@ragdoll', '@宪宪'],
-    clientId: 'anthropic',
+    provider: 'anthropic',
     defaultModel: 'claude-sonnet-4-5-20250929',
     mcpSupport: true,
     breedId: 'ragdoll',
@@ -121,7 +122,7 @@ export const CAT_CONFIGS: Record<string, CatConfig> = {
       secondary: '#D4E6D3',
     },
     mentionPatterns: ['@codex', '@缅因猫', '@缅因', '@maine', '@砚砚'],
-    clientId: 'openai',
+    provider: 'openai',
     defaultModel: 'codex',
     mcpSupport: false,
     breedId: 'maine-coon',
@@ -138,7 +139,7 @@ export const CAT_CONFIGS: Record<string, CatConfig> = {
       secondary: '#D6E9F8',
     },
     mentionPatterns: ['@gemini', '@暹罗猫', '@暹罗', '@siamese', '@暄罗猫', '@暄罗'],
-    clientId: 'google',
+    provider: 'google',
     defaultModel: 'gemini-2.5-pro',
     mcpSupport: false,
     breedId: 'siamese',

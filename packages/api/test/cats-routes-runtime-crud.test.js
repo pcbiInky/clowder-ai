@@ -1281,6 +1281,12 @@ describe('cats routes runtime CRUD', { concurrency: false }, () => {
         accountRef: 'claude',
         defaultModel: 'claude-sonnet-4-6',
       },
+      {
+        catId: 'runtime-trae-wrong-builtin',
+        client: 'trae',
+        providerProfileId: 'codex',
+        defaultModel: 'GLM-5',
+      },
     ];
 
     for (const spec of cases) {
@@ -1309,6 +1315,44 @@ describe('cats routes runtime CRUD', { concurrency: false }, () => {
       const createBody = JSON.parse(createRes.body);
       assert.match(createBody.error, new RegExp(`incompatible with client "${spec.clientId}"`, 'i'));
     }
+  });
+
+  it('POST /api/cats accepts trae members bound to the trae builtin account', async () => {
+    const projectRoot = createProjectRoot();
+    process.env.CAT_TEMPLATE_PATH = join(projectRoot, 'cat-template.json');
+
+    const Fastify = (await import('fastify')).default;
+    const { catsRoutes } = await import('../dist/routes/cats.js');
+
+    const app = Fastify();
+    await app.register(catsRoutes);
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/cats',
+      headers: {
+        'content-type': 'application/json',
+        'x-cat-cafe-user': 'codex',
+      },
+      body: JSON.stringify({
+        catId: 'runtime-trae',
+        name: '运行时 Trae 猫',
+        displayName: '运行时 Trae 猫',
+        avatar: '/avatars/runtime.png',
+        color: { primary: '#0f172a', secondary: '#e2e8f0' },
+        mentionPatterns: ['@runtime-trae'],
+        roleDescription: '审查',
+        client: 'trae',
+        providerProfileId: 'trae',
+        defaultModel: 'GLM-5',
+      }),
+    });
+
+    assert.equal(createRes.statusCode, 201);
+    const createBody = JSON.parse(createRes.body);
+    assert.equal(createBody.cat.provider, 'trae');
+    assert.equal(createBody.cat.accountRef, 'trae');
+    assert.equal(createBody.cat.defaultModel, 'GLM-5');
   });
 
   it('POST /api/cats rejects non-builtin provider bindings for google client', async () => {

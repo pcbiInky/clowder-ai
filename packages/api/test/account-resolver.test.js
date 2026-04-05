@@ -280,4 +280,29 @@ describe('account-resolver (4b unified runtime resolution)', () => {
     assert.ok(profile);
     assert.equal(profile.apiKey, undefined, 'env fallback retired: no apiKey without stored credential');
   });
+
+  it('resolveBuiltinClientForProvider and builtin ids support trae', async () => {
+    const { resolveBuiltinClientForProvider, builtinAccountIdForClient, resolveByAccountRef } = await import(
+      `../dist/config/account-resolver.js?t=${Date.now()}-trae`
+    );
+    await writeCatalog({
+      trae: {
+        authType: 'oauth',
+        protocol: 'openai',
+        displayName: 'Trae (client-auth)',
+        models: ['GLM-5'],
+      },
+    });
+    await writeCredentials({});
+
+    assert.equal(resolveBuiltinClientForProvider('trae'), 'trae');
+    assert.equal(builtinAccountIdForClient('trae'), 'trae');
+
+    const profile = resolveByAccountRef(projectRoot, 'trae');
+    assert.ok(profile);
+    assert.equal(profile.id, 'trae');
+    assert.equal(profile.kind, 'builtin');
+    assert.equal(profile.client, 'trae');
+    assert.equal(profile.protocol, 'openai');
+  });
 });

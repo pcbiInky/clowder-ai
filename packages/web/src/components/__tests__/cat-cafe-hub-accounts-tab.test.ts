@@ -233,6 +233,7 @@ describe('CatCafeHub provider profiles tab', () => {
     expect(container.textContent).not.toContain('非 UI 直出');
     expect(container.textContent).toContain('OpenCode (client-auth)');
     expect(container.textContent).toContain('Dare (client-auth)');
+    expect(container.textContent).toContain('Trae (client-auth)');
     expect(container.textContent).not.toContain('OAuth-like');
     expect(container.textContent).not.toContain('内置认证');
     expect(container.textContent).toContain('新建 API Key 账号');
@@ -723,6 +724,7 @@ describe('CatCafeHub provider profiles tab', () => {
     expect(profileList?.textContent).toContain('Codex Sponsor');
     expect(profileList?.textContent).toContain('OpenCode (client-auth)');
     expect(profileList?.textContent).toContain('Dare (client-auth)');
+    expect(profileList?.textContent).toContain('Trae (client-auth)');
     expect(container.textContent).not.toContain('全部');
     expect(container.textContent).not.toContain('内置认证');
     expect(

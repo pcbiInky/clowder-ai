@@ -12,9 +12,10 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { type CatId, type ContextHealth, catRegistry, type MessageContent } from '@cat-cafe/shared';
 import {
+  resolveAnthropicRuntimeProfile,
   resolveBuiltinClientForProvider,
   resolveForClient,
   validateRuntimeProviderBinding,
@@ -39,8 +40,6 @@ import {
   OC_API_KEY_ENV,
   OC_BASE_URL_ENV,
   parseOpenCodeModel,
-  safeProviderName,
-  summarizeOpenCodeRuntimeConfigForDebug,
   writeOpenCodeRuntimeConfig,
 } from '../providers/opencode-config-template.js';
 
@@ -92,7 +91,6 @@ import {
   isCliTimeoutError,
   isMissingClaudeSessionError,
   isPromptTokenLimitExceededError,
-  isTransientAcpPromptFailure,
   isTransientCliExitCode1,
   preflightRace,
 } from './invoke-helpers.js';
@@ -309,7 +307,7 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
   let didWriteAudit = false;
   let didComplete = false;
   let didResetRestoreFailures = false;
-  let openCodeRuntimeConfigPath: string | undefined;
+  let openCodeRuntimeConfigDir: string | undefined;
   const hostProjectRoot = findMonorepoRoot(process.cwd());
 
   // === CAT_INVOKED 审计 (fire-and-forget, 缅因猫 review P2-3) ===
@@ -602,7 +600,7 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
       await tryGovernanceBootstrap(workingDirectory, catCafeRoot);
       const { checkGovernancePreflight } = await import('../../../../../config/governance/governance-preflight.js');
       const catEntry = catRegistry.tryGet(catId as string);
-      const preflight = await checkGovernancePreflight(workingDirectory, catCafeRoot, catEntry?.config.clientId);
+      const preflight = await checkGovernancePreflight(workingDirectory, catCafeRoot, catEntry?.config.provider);
       if (!preflight.ready) {
         const reasonKind = preflight.needsBootstrap
           ? 'needs_bootstrap'
@@ -663,8 +661,9 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
 
     // F127 account injection:
     // Members bind to a concrete accountRef (builtin oauth account or generic api_key account).
+    // Legacy providerProfileId is still read as a migration fallback.
     const catConfig = catRegistry.tryGet(catId as string)?.config;
-    const provider = catConfig?.clientId;
+    const provider = catConfig?.provider;
     const builtinClient = provider ? resolveBuiltinClientForProvider(provider) : null;
     const defaultModel = catConfig?.defaultModel?.trim() || undefined;
     // Account resolution, proxy registration, and runtime config always use the
@@ -713,52 +712,31 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
       }
     }
 
-    // Fail fast when an api_key account has no credential — otherwise the child
-    // process silently receives no auth and produces cryptic errors.
-    if (resolvedAccount?.authType === 'api_key' && !resolvedAccount.apiKey) {
-      throw new Error(
-        `account "${resolvedAccount.id}" is configured as api_key but has no API key set — ` +
-          'add the key in Hub > account settings',
-      );
-    }
-
-    // F340: Protocol is fully derived from client/provider identity — account.protocol retired.
-    // Non-opencode clients have a fixed protocol. OpenCode derives protocol from the
-    // variant's model provider name or model string prefix, defaulting to anthropic.
-    const protocolForProvider: Record<string, string> = {
+    // Determine effective protocol: account.protocol > provider-based default
+    const defaultProtocolForProvider: Record<string, string> = {
       anthropic: 'anthropic',
+      opencode: 'anthropic',
       openai: 'openai',
       google: 'google',
       dare: 'openai',
-      opencode: 'anthropic',
-      openrouter: 'openai',
+      trae: 'openai',
     };
-    let effectiveProtocol: string | null = provider ? (protocolForProvider[provider] ?? null) : null;
-    if (provider === 'opencode') {
-      // Priority 1: explicit variant.provider field
-      const modelProviderHint = catConfig?.provider?.trim();
-      if (modelProviderHint && protocolForProvider[modelProviderHint]) {
-        effectiveProtocol = protocolForProvider[modelProviderHint];
-      } else {
-        // Priority 2: model string prefix (e.g. 'openrouter/google/model' → openrouter → openai)
-        const trimmedModel = typeof defaultModel === 'string' ? defaultModel.trim() : '';
-        const parsed = trimmedModel ? parseOpenCodeModel(trimmedModel) : null;
-        if (parsed && protocolForProvider[parsed.providerName]) {
-          effectiveProtocol = protocolForProvider[parsed.providerName];
-        }
-      }
-    }
+    const effectiveProtocol =
+      resolvedAccount?.authType === 'api_key' && resolvedAccount.protocol
+        ? resolvedAccount.protocol
+        : provider
+          ? (defaultProtocolForProvider[provider] ?? null)
+          : null;
 
-    // effectiveProtocol is used below for env injection branching (anthropic/openai/google)
-    // but is NOT passed to callbackEnv — it should not influence CLI routing decisions.
+    // Pass protocol hint to CLI via callbackEnv (used by OpenCode/Claude for model prefix)
+    if (effectiveProtocol) {
+      callbackEnv.CAT_CAFE_EFFECTIVE_PROTOCOL = effectiveProtocol;
+    }
 
     if (effectiveProtocol === 'anthropic') {
       if (resolvedAccount?.authType === 'api_key') {
         callbackEnv.CAT_CAFE_ANTHROPIC_PROFILE_MODE = 'api_key';
         if (resolvedAccount.apiKey) callbackEnv.CAT_CAFE_ANTHROPIC_API_KEY = resolvedAccount.apiKey;
-        if (resolvedAccount.models?.length && provider !== 'opencode') {
-          callbackEnv.CAT_CAFE_ANTHROPIC_MODEL_OVERRIDE = resolvedAccount.models[0];
-        }
         if (resolvedAccount.baseUrl) {
           const proxyPortStr = process.env.ANTHROPIC_PROXY_PORT || '9877';
           const proxyPortNum = parseInt(proxyPortStr, 10);
@@ -798,7 +776,7 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
           callbackEnv.OPENAI_BASE_URL = resolvedAccount.baseUrl;
           callbackEnv.OPENAI_API_BASE = resolvedAccount.baseUrl;
         }
-      } else if (boundAccountRef) {
+      } else if (boundAccountRef && provider === 'openai') {
         callbackEnv.CODEX_AUTH_MODE = 'oauth';
       }
     } else if (effectiveProtocol === 'google') {
@@ -824,62 +802,37 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
     }
 
     const trimmedDefaultModel = typeof defaultModel === 'string' ? defaultModel.trim() : undefined;
-    const modelProviderName = catConfig?.provider?.trim() || undefined;
+    const ocProviderName = catConfig?.ocProviderName?.trim() || undefined;
     const parsedOpenCodeModel =
       provider === 'opencode' && trimmedDefaultModel ? parseOpenCodeModel(trimmedDefaultModel) : null;
     // F189 intake: determine effective provider + model.
     // Three cases for defaultModel shape:
-    //   1. Canonical "provider/model" where parsed provider === modelProviderName → use as-is
-    //   2. Namespaced "ns/model" where parsed prefix ≠ modelProviderName → prefix with modelProviderName
-    //   3. Bare "model" → prefix with modelProviderName if available
-    // When modelProviderName is absent, parseOpenCodeModel is the sole source.
+    //   1. Canonical "provider/model" where parsed provider === ocProviderName → use as-is
+    //   2. Namespaced "ns/model" where parsed prefix ≠ ocProviderName → prefix with ocProviderName
+    //   3. Bare "model" → prefix with ocProviderName if available
+    // When ocProviderName is absent, parseOpenCodeModel is the sole source.
     let effectiveProviderName: string | undefined;
     let effectiveModel: string | undefined;
     if (parsedOpenCodeModel) {
-      if (modelProviderName && parsedOpenCodeModel.providerName !== modelProviderName) {
+      if (ocProviderName && parsedOpenCodeModel.providerName !== ocProviderName) {
         // Namespace case: model's "/" is a namespace separator, not provider prefix
-        effectiveProviderName = modelProviderName;
-        effectiveModel = `${modelProviderName}/${trimmedDefaultModel}`;
+        effectiveProviderName = ocProviderName;
+        effectiveModel = `${ocProviderName}/${trimmedDefaultModel}`;
       } else {
-        // Canonical provider/model (with or without matching modelProviderName)
-        effectiveProviderName = modelProviderName || parsedOpenCodeModel.providerName;
+        // Canonical provider/model (with or without matching ocProviderName)
+        effectiveProviderName = ocProviderName || parsedOpenCodeModel.providerName;
         effectiveModel = trimmedDefaultModel!;
       }
-    } else if (modelProviderName && trimmedDefaultModel) {
-      // Bare model + modelProviderName fallback
-      effectiveProviderName = modelProviderName;
-      effectiveModel = `${modelProviderName}/${trimmedDefaultModel}`;
+    } else if (ocProviderName && trimmedDefaultModel) {
+      // Bare model + ocProviderName fallback
+      effectiveProviderName = ocProviderName;
+      effectiveModel = `${ocProviderName}/${trimmedDefaultModel}`;
     }
-
-    if (provider === 'opencode') {
-      log.debug(
-        {
-          catId,
-          invocationId,
-          boundAccountRef: boundAccountRef ?? null,
-          resolvedAccount: resolvedAccount
-            ? {
-                id: resolvedAccount.id,
-                authType: resolvedAccount.authType,
-                baseUrl: resolvedAccount.baseUrl ?? null,
-                modelCount: resolvedAccount.models?.length ?? 0,
-                hasApiKey: Boolean(resolvedAccount.apiKey),
-              }
-            : null,
-          defaultModel: trimmedDefaultModel ?? null,
-          modelProviderName: modelProviderName ?? null,
-          parsedOpenCodeModel,
-          effectiveProviderName: effectiveProviderName ?? null,
-          effectiveModel: effectiveModel ?? null,
-        },
-        'Resolved OpenCode runtime inputs',
-      );
-    }
-    // fix(#280): explicit provider name means we must force the F189 path so the
+    // fix(#280): explicit ocProviderName means we must force the F189 path so the
     // effective "provider/model" string is injected into opencode, even for builtin
-    // providers. For legacy members without provider name, only synthesize runtime
+    // providers. For legacy members without ocProviderName, only synthesize runtime
     // config when the fully-qualified model is not already routable by `opencode models`.
-    const hasExplicitOcProvider = Boolean(modelProviderName);
+    const hasExplicitOcProvider = Boolean(ocProviderName);
     if (
       provider === 'opencode' &&
       resolvedAccount != null &&
@@ -888,49 +841,19 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
       effectiveProviderName &&
       (hasExplicitOcProvider || !getOpenCodeKnownModels().has(effectiveModel))
     ) {
-      // Remap model prefix when provider name collides with OpenCode builtins
-      // (e.g. 'openai/gpt-4o' → 'openai-compat/gpt-4o') so the CLI -m arg
-      // matches the remapped provider key in opencode.json.
-      const safeProvider = safeProviderName(effectiveProviderName);
-      const safeModel =
-        safeProvider !== effectiveProviderName && effectiveModel.startsWith(`${effectiveProviderName}/`)
-          ? `${safeProvider}/${effectiveModel.slice(effectiveProviderName.length + 1)}`
-          : effectiveModel;
-      callbackEnv.CAT_CAFE_ANTHROPIC_MODEL_OVERRIDE = safeModel;
-      const apiType = deriveOpenCodeApiType(effectiveProviderName);
+      callbackEnv.CAT_CAFE_ANTHROPIC_MODEL_OVERRIDE = effectiveModel;
+      const apiType = deriveOpenCodeApiType(resolvedAccount.protocol, effectiveProviderName);
       const rawModels = resolvedAccount.models?.length ? resolvedAccount.models : [effectiveModel];
-      const runtimeConfigOptions = {
+      openCodeRuntimeConfigDir = writeOpenCodeRuntimeConfig(projectRoot, catId as string, invocationId, {
         providerName: effectiveProviderName,
         models: rawModels,
         defaultModel: effectiveModel,
         apiType,
         hasBaseUrl: Boolean(resolvedAccount.baseUrl),
-      } as const;
-      openCodeRuntimeConfigPath = writeOpenCodeRuntimeConfig(
-        projectRoot,
-        catId as string,
-        invocationId,
-        runtimeConfigOptions,
-      );
-      callbackEnv.OPENCODE_CONFIG = openCodeRuntimeConfigPath;
+      });
+      callbackEnv.OPENCODE_CONFIG_DIR = openCodeRuntimeConfigDir;
       if (resolvedAccount.apiKey) callbackEnv[OC_API_KEY_ENV] = resolvedAccount.apiKey;
       if (resolvedAccount.baseUrl) callbackEnv[OC_BASE_URL_ENV] = resolvedAccount.baseUrl;
-      log.debug(
-        {
-          catId,
-          invocationId,
-          openCodeConfigPath: openCodeRuntimeConfigPath,
-          apiType,
-          callbackEnvSummary: {
-            opencodeConfig: callbackEnv.OPENCODE_CONFIG,
-            ocBaseUrl: callbackEnv[OC_BASE_URL_ENV] ?? null,
-            ocApiKeyPresent: Boolean(callbackEnv[OC_API_KEY_ENV]),
-            modelOverride: callbackEnv.CAT_CAFE_ANTHROPIC_MODEL_OVERRIDE ?? null,
-          },
-          runtimeConfigSummary: summarizeOpenCodeRuntimeConfigForDebug(runtimeConfigOptions),
-        },
-        'Prepared OpenCode runtime config',
-      );
     }
 
     // F-BLOAT: Only inject staticIdentity (systemPrompt) on new sessions for cats
@@ -1024,52 +947,43 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
             const existing = await deps.sessionChainStore.getActive(catId, threadId);
             if (existing) {
               if (existing.cliSessionId !== msg.sessionId) {
-                if (msg.ephemeralSession) {
-                  // ACP transport: sessionId is per-invocation (newSession() each time).
-                  // This is normal — NOT a "session replaced" event. Just update the tracked ID.
-                  await deps.sessionChainStore.update(existing.id, {
-                    cliSessionId: msg.sessionId,
-                    updatedAt: Date.now(),
-                  });
-                } else {
-                  // CLI session changed → old context is lost (resume failed / CLI restarted).
-                  // Use requestSeal + finalize to ensure transcript/digest are written,
-                  // not bare update(status:'sealed') which skips flush.
-                  let sealAccepted = false;
-                  if (deps.sessionSealer) {
-                    try {
-                      const result = await deps.sessionSealer.requestSeal({
-                        sessionId: existing.id,
-                        reason: 'cli_session_replaced',
-                      });
-                      sealAccepted = result.accepted;
-                      if (sealAccepted) {
-                        deps.sessionSealer.finalize({ sessionId: existing.id }).catch(() => {});
-                      }
-                    } catch {
-                      /* best-effort seal */
+                // CLI session changed → old context is lost (resume failed / CLI restarted).
+                // Use requestSeal + finalize to ensure transcript/digest are written,
+                // not bare update(status:'sealed') which skips flush.
+                let sealAccepted = false;
+                if (deps.sessionSealer) {
+                  try {
+                    const result = await deps.sessionSealer.requestSeal({
+                      sessionId: existing.id,
+                      reason: 'cli_session_replaced',
+                    });
+                    sealAccepted = result.accepted;
+                    if (sealAccepted) {
+                      deps.sessionSealer.finalize({ sessionId: existing.id }).catch(() => {});
                     }
-                  } else {
-                    // Fallback: no sealer available — bare update (legacy path)
-                    const now = Date.now();
-                    await deps.sessionChainStore.update(existing.id, {
-                      status: 'sealed',
-                      sealReason: 'cli_session_replaced',
-                      sealedAt: now,
-                      updatedAt: now,
-                    });
-                    sealAccepted = true;
+                  } catch {
+                    /* best-effort seal */
                   }
-                  // Only create new active record if old one was successfully sealed.
-                  // Otherwise we'd have two active records — a dirty state.
-                  if (sealAccepted || !deps.sessionSealer) {
-                    await deps.sessionChainStore.create({
-                      cliSessionId: msg.sessionId,
-                      threadId,
-                      catId,
-                      userId,
-                    });
-                  }
+                } else {
+                  // Fallback: no sealer available — bare update (legacy path)
+                  const now = Date.now();
+                  await deps.sessionChainStore.update(existing.id, {
+                    status: 'sealed',
+                    sealReason: 'cli_session_replaced',
+                    sealedAt: now,
+                    updatedAt: now,
+                  });
+                  sealAccepted = true;
+                }
+                // Only create new active record if old one was successfully sealed.
+                // Otherwise we'd have two active records — a dirty state.
+                if (sealAccepted || !deps.sessionSealer) {
+                  await deps.sessionChainStore.create({
+                    cliSessionId: msg.sessionId,
+                    threadId,
+                    catId,
+                    userId,
+                  });
                 }
               }
             } else {
@@ -1277,7 +1191,7 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
                   // 1) api_key + approx health can be noisy on third-party gateways
                   // 2) api_key + compress strategy should not be force-sealed here
                   // Keep context_health observability in both cases.
-                  const provider = catRegistry.tryGet(catId as string)?.config.clientId;
+                  const provider = catRegistry.tryGet(catId as string)?.config.provider;
                   const profileMode = callbackEnv[ANTHROPIC_PROFILE_MODE_KEY];
                   const strategy = getSessionStrategy(catId as string);
                   const isAnthropicApiKey = provider === 'anthropic' && profileMode === ANTHROPIC_PROFILE_MODE_API_KEY;
@@ -1452,8 +1366,7 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
         const iterResult = await abortableNext(serviceIter, signal);
         if (iterResult.done) break;
         const msg = iterResult.value;
-        // F149: provider_signal / liveness_signal must NOT reset timeout — prevents "续命"
-        if (msg.type !== 'provider_signal' && msg.type !== 'liveness_signal') resetInvocationTimeout();
+        resetInvocationTimeout();
         if (shouldTrackGeminiResumeFailures && options.sessionId && msg.type === 'error') {
           const failureKind = classifyResumeFailure(msg.error);
           if (failureKind) {
@@ -1478,7 +1391,7 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
           allowTransientRetry &&
           !attemptHasContentOutput &&
           msg.type === 'error' &&
-          (isTransientCliExitCode1(msg.error) || isTransientAcpPromptFailure(msg.error))
+          isTransientCliExitCode1(msg.error)
         ) {
           suppressedTransientCliError = msg;
           continue;
@@ -1538,21 +1451,10 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
           }
         }
 
-        // F149: Map provider_signal / liveness_signal → system_info for frontend delivery
-        const deliveryMsg =
-          msg.type === 'provider_signal' || msg.type === 'liveness_signal'
-            ? { ...msg, type: 'system_info' as const }
-            : msg;
-        for await (const out of streamProcessedOutputs(deliveryMsg)) {
+        for await (const out of streamProcessedOutputs(msg)) {
           yield out;
         }
-        if (
-          msg.type !== 'error' &&
-          msg.type !== 'done' &&
-          msg.type !== 'session_init' &&
-          msg.type !== 'provider_signal' &&
-          msg.type !== 'liveness_signal'
-        ) {
+        if (msg.type !== 'error' && msg.type !== 'done' && msg.type !== 'session_init') {
           attemptHasContentOutput = true;
           // Substantive = real model output, excludes system_info (e.g. timeout_diagnostics).
           if (msg.type !== 'system_info') {
@@ -1717,8 +1619,7 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
     // F118: Release session mutex (idempotent — safe if never acquired)
     sessionMutexRelease?.();
 
-    if (openCodeRuntimeConfigPath) {
-      const openCodeRuntimeConfigDir = dirname(openCodeRuntimeConfigPath);
+    if (openCodeRuntimeConfigDir) {
       await rm(openCodeRuntimeConfigDir, { recursive: true, force: true }).catch((err) => {
         log.warn({ invocationId, path: openCodeRuntimeConfigDir, err }, 'Failed to remove OpenCode runtime config dir');
       });

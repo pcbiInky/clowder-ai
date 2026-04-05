@@ -1,12 +1,8 @@
-import { CLI_EFFORT_VALUES, type CliEffortValue, getCliEffortOptionsForProvider } from '@cat-cafe/shared';
 import type { CatData } from '@/hooks/useCatData';
-import type { BuiltinAccountClient, ProfileItem } from './hub-accounts.types';
+import type { BuiltinAccountClient, ProfileItem } from './hub-provider-profiles.types';
 import type { CatStrategyEntry, StrategyType } from './hub-strategy-types';
 
-/** F340 P5: Renamed from ClientValue → ClientId (aligned with shared type). */
-export type ClientId = 'anthropic' | 'openai' | 'google' | 'dare' | 'opencode' | 'antigravity';
-/** @deprecated F340: Use {@link ClientId} instead. */
-export type ClientValue = ClientId;
+export type ClientValue = 'anthropic' | 'openai' | 'google' | 'dare' | 'trae' | 'opencode' | 'antigravity';
 export type SessionChainValue = 'true' | 'false';
 export type CodexSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
 export type CodexApprovalPolicy = 'untrusted' | 'on-failure' | 'on-request' | 'never';
@@ -26,14 +22,12 @@ export interface HubCatEditorFormState {
   teamStrengths: string;
   caution: string;
   strengths: string;
-  clientId: ClientId;
+  client: ClientValue;
   accountRef: string;
   defaultModel: string;
   commandArgs: string;
   cliConfigArgs: string[];
-  cliEffort: CliEffortValue | '';
-  /** F340 P5: Model provider name (renamed from ocProviderName). */
-  provider: string;
+  ocProviderName: string;
   sessionChain: SessionChainValue;
   maxPromptTokens: string;
   maxContextTokens: string;
@@ -42,8 +36,9 @@ export interface HubCatEditorFormState {
 }
 
 export interface HubCatEditorDraft {
-  clientId: ClientId;
+  client: ClientValue;
   accountRef?: string;
+  providerProfileId?: string;
   defaultModel: string;
   commandArgs?: string;
 }
@@ -63,11 +58,12 @@ export interface CodexRuntimeSettings {
   authMode: CodexAuthMode;
 }
 
-export const CLIENT_OPTIONS: Array<{ value: ClientId; label: string }> = [
+export const CLIENT_OPTIONS: Array<{ value: ClientValue; label: string }> = [
   { value: 'anthropic', label: 'Claude' },
   { value: 'openai', label: 'Codex' },
   { value: 'google', label: 'Gemini' },
   { value: 'dare', label: 'Dare' },
+  { value: 'trae', label: 'Trae' },
   { value: 'opencode', label: 'OpenCode' },
   { value: 'antigravity', label: 'Antigravity' },
 ];
@@ -103,14 +99,6 @@ export const CODEX_AUTH_MODE_OPTIONS: Array<{ value: CodexAuthMode; label: strin
 ];
 
 export const DEFAULT_ANTIGRAVITY_COMMAND_ARGS = '. --remote-debugging-port=9000';
-
-function isCliEffortValue(value: string | undefined): value is CliEffortValue {
-  return value !== undefined && CLI_EFFORT_VALUES.includes(value as CliEffortValue);
-}
-
-export function getCliEffortOptionsForClient(client: ClientValue): readonly CliEffortValue[] | null {
-  return getCliEffortOptionsForProvider(client);
-}
 
 export function splitMentionPatterns(raw: string): string[] {
   return raw
@@ -187,25 +175,40 @@ export function splitStrengthTags(raw: string): string[] {
     .filter(Boolean);
 }
 
-function isBuiltinClient(client: ClientId): client is BuiltinAccountClient {
+function isBuiltinClient(client: ClientValue): client is BuiltinAccountClient {
   return (
-    client === 'anthropic' || client === 'openai' || client === 'google' || client === 'dare' || client === 'opencode'
+    client === 'anthropic' ||
+    client === 'openai' ||
+    client === 'google' ||
+    client === 'dare' ||
+    client === 'trae' ||
+    client === 'opencode'
   );
 }
 
 function legacyProfileClient(profile: ProfileItem): BuiltinAccountClient | undefined {
-  if (profile.clientId) return profile.clientId;
+  if (profile.client) return profile.client;
   if (profile.oauthLikeClient === 'dare' || profile.oauthLikeClient === 'opencode') return profile.oauthLikeClient;
   const normalizedId = `${profile.id} ${profile.provider ?? ''} ${profile.displayName} ${profile.name}`.toLowerCase();
   if (normalizedId.includes('claude')) return 'anthropic';
   if (normalizedId.includes('codex')) return 'openai';
   if (normalizedId.includes('gemini')) return 'google';
   if (normalizedId.includes('dare')) return 'dare';
+  if (normalizedId.includes('trae')) return 'trae';
   if (normalizedId.includes('opencode')) return 'opencode';
-  return undefined;
+  switch (profile.protocol) {
+    case 'anthropic':
+      return 'anthropic';
+    case 'openai':
+      return 'openai';
+    case 'google':
+      return 'google';
+    default:
+      return undefined;
+  }
 }
 
-export function builtinAccountIdForClient(client: ClientId): string | null {
+export function builtinAccountIdForClient(client: ClientValue): string | null {
   if (!isBuiltinClient(client)) return null;
   switch (client) {
     case 'anthropic':
@@ -216,18 +219,20 @@ export function builtinAccountIdForClient(client: ClientId): string | null {
       return 'gemini';
     case 'dare':
       return 'dare';
+    case 'trae':
+      return 'trae';
     case 'opencode':
       return 'opencode';
   }
 }
 
-export function filterAccounts(client: ClientId, profiles: ProfileItem[]): ProfileItem[] {
+export function filterAccounts(client: ClientValue, profiles: ProfileItem[]): ProfileItem[] {
   if (!isBuiltinClient(client)) return [];
   const builtinProfiles = profiles.filter(
     (profile) => profile.authType !== 'api_key' && legacyProfileClient(profile) === client,
   );
   // Gemini CLI only supports builtin Google auth — no API key profiles.
-  if (client === 'google') return builtinProfiles;
+  if (client === 'google' || client === 'trae') return builtinProfiles;
   const apiKeyProfiles = profiles.filter((profile) => profile.authType === 'api_key');
   return [...builtinProfiles, ...apiKeyProfiles.filter((profile) => !builtinProfiles.includes(profile))];
 }
@@ -237,7 +242,6 @@ export const filterProfiles = filterAccounts;
 export function initialState(cat?: CatData | null, draft?: HubCatEditorDraft | null): HubCatEditorFormState {
   const createDraft = !cat ? draft : null;
   const catId = cat?.id ?? '';
-  const persistedCliEffort = cat?.cli?.effort;
   const mentionPatterns = cat?.mentionPatterns ?? (catId ? [canonicalMentionPattern(catId)] : []);
   return {
     catId,
@@ -253,13 +257,13 @@ export function initialState(cat?: CatData | null, draft?: HubCatEditorDraft | n
     teamStrengths: cat?.teamStrengths ?? '',
     caution: cat?.caution ?? '',
     strengths: cat?.strengths?.join(', ') ?? '',
-    clientId: (cat?.clientId as ClientId | undefined) ?? createDraft?.clientId ?? 'anthropic',
-    accountRef: cat?.accountRef ?? createDraft?.accountRef ?? '',
+    client: (cat?.provider as ClientValue | undefined) ?? createDraft?.client ?? 'anthropic',
+    accountRef:
+      cat?.accountRef ?? cat?.providerProfileId ?? createDraft?.accountRef ?? createDraft?.providerProfileId ?? '',
     defaultModel: cat?.defaultModel ?? createDraft?.defaultModel ?? '',
     commandArgs: cat?.commandArgs?.join(' ') ?? createDraft?.commandArgs ?? '',
     cliConfigArgs: [...(cat?.cliConfigArgs ?? [])],
-    cliEffort: isCliEffortValue(persistedCliEffort) ? persistedCliEffort : '',
-    provider: cat?.provider ?? '',
+    ocProviderName: cat?.ocProviderName ?? '',
     sessionChain: String(cat?.sessionChain ?? true) as SessionChainValue,
     maxPromptTokens: cat?.contextBudget ? String(cat.contextBudget.maxPromptTokens) : '',
     maxContextTokens: cat?.contextBudget ? String(cat.contextBudget.maxContextTokens) : '',

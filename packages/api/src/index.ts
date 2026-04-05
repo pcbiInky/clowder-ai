@@ -51,6 +51,7 @@ import {
   getEventAuditLog,
   MemoryGovernanceStore,
   OpenCodeAgentService,
+  TraeAgentService,
 } from './domains/cats/services/index.js';
 
 import { initPushNotificationService } from './domains/cats/services/push/PushNotificationService.js';
@@ -792,6 +793,9 @@ async function main(): Promise<void> {
         }
         case 'dare':
           service = new DareAgentService({ catId });
+          break;
+        case 'trae':
+          service = new TraeAgentService({ catId });
           break;
         case 'antigravity':
           service = new AntigravityAgentService({

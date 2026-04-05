@@ -14,16 +14,15 @@ vi.mock('@/components/useConfirm', () => ({
 }));
 
 import { HubCatEditor } from '@/components/HubCatEditor';
-import type { ProfileItem } from '@/components/hub-accounts.types';
 import {
   buildCatPayload,
   DEFAULT_ANTIGRAVITY_COMMAND_ARGS,
   filterProfiles,
-  getCliEffortOptionsForClient,
   type HubCatEditorFormState,
   splitCommandArgs,
   validateModelFormatForClient,
 } from '@/components/hub-cat-editor.model';
+import type { ProfileItem } from '@/components/hub-provider-profiles.types';
 
 const mockApiFetch = vi.mocked(apiFetch);
 
@@ -103,13 +102,12 @@ describe('HubCatEditor', () => {
       teamStrengths: '',
       caution: '',
       strengths: '',
-      clientId: 'openai',
+      client: 'openai',
       accountRef: '',
       defaultModel: 'gpt-5.4',
       commandArgs: '',
       cliConfigArgs: [],
-      cliEffort: '',
-      provider: '',
+      ocProviderName: '',
       sessionChain: 'true',
       maxPromptTokens: '',
       maxContextTokens: '',
@@ -120,7 +118,7 @@ describe('HubCatEditor', () => {
       id: 'runtime-codex',
       name: 'runtime-codex',
       displayName: '运行时缅因猫',
-      clientId: 'openai',
+      provider: 'openai',
       defaultModel: 'gpt-5.4',
       color: { primary: '#16a34a', secondary: '#bbf7d0' },
       mentionPatterns: ['@runtime-codex'],
@@ -147,13 +145,12 @@ describe('HubCatEditor', () => {
       teamStrengths: '',
       caution: '',
       strengths: '',
-      clientId: 'openai',
+      client: 'openai',
       accountRef: '',
       defaultModel: 'gpt-5.4',
       commandArgs: '',
       cliConfigArgs: [],
-      cliEffort: '',
-      provider: '',
+      ocProviderName: '',
       sessionChain: 'true',
       maxPromptTokens: '',
       maxContextTokens: '',
@@ -164,7 +161,7 @@ describe('HubCatEditor', () => {
       id: 'runtime-codex',
       name: 'runtime-codex',
       displayName: '运行时缅因猫',
-      clientId: 'antigravity',
+      provider: 'antigravity',
       defaultModel: 'gemini-bridge',
       color: { primary: '#16a34a', secondary: '#bbf7d0' },
       mentionPatterns: ['@runtime-codex'],
@@ -191,13 +188,12 @@ describe('HubCatEditor', () => {
       teamStrengths: '',
       caution: '',
       strengths: '',
-      clientId: 'antigravity',
+      client: 'antigravity',
       accountRef: '',
       defaultModel: 'gemini-bridge',
       commandArgs: '',
       cliConfigArgs: [],
-      cliEffort: '',
-      provider: '',
+      ocProviderName: '',
       sessionChain: 'true',
       maxPromptTokens: '',
       maxContextTokens: '',
@@ -209,44 +205,44 @@ describe('HubCatEditor', () => {
     expect(payload.commandArgs).toEqual(splitCommandArgs(DEFAULT_ANTIGRAVITY_COMMAND_ARGS));
   });
 
-  it('exposes provider-aware effort options for Claude and Codex only', () => {
-    expect(getCliEffortOptionsForClient('anthropic')).toEqual(['low', 'medium', 'high', 'max']);
-    expect(getCliEffortOptionsForClient('openai')).toEqual(['low', 'medium', 'high', 'xhigh']);
-    expect(getCliEffortOptionsForClient('opencode')).toBeNull();
-  });
-
-  it('buildCatPayload keeps structured cli.effort separate from raw cliConfigArgs', () => {
-    const form = {
-      catId: 'runtime-codex',
-      name: '运行时缅因猫',
-      displayName: '运行时缅因猫',
+  it('buildCatPayload preserves trae client-auth member payload fields', () => {
+    const form: HubCatEditorFormState = {
+      catId: 'runtime-trae',
+      name: '运行时 Trae 猫',
+      displayName: '运行时 Trae 猫',
       nickname: '',
-      avatar: '/avatars/codex.png',
-      colorPrimary: '#16a34a',
-      colorSecondary: '#bbf7d0',
-      mentionPatterns: '@runtime-codex',
+      avatar: '/avatars/trae.png',
+      colorPrimary: '#0f172a',
+      colorSecondary: '#e2e8f0',
+      mentionPatterns: '@runtime-trae',
       roleDescription: '审查',
-      personality: '严谨',
+      personality: '稳',
       teamStrengths: '',
       caution: '',
       strengths: '',
-      clientId: 'openai',
-      accountRef: 'codex-sponsor',
-      defaultModel: 'gpt-5.4',
+      client: 'trae',
+      accountRef: 'trae',
+      defaultModel: 'GLM-5',
       commandArgs: '',
-      cliConfigArgs: ['--config model_provider="custom"'],
-      cliEffort: 'xhigh',
-      provider: '',
+      cliConfigArgs: [],
+      ocProviderName: '',
       sessionChain: 'true',
       maxPromptTokens: '',
       maxContextTokens: '',
       maxMessages: '',
       maxContentLengthPerMsg: '',
-    } as HubCatEditorFormState & { cliEffort: string };
+    };
 
     const payload = buildCatPayload(form, null) as Record<string, unknown>;
-    expect(payload.cli).toEqual({ effort: 'xhigh' });
-    expect(payload.cliConfigArgs).toEqual(['--config model_provider="custom"']);
+    expect(payload).toMatchObject({
+      catId: 'runtime-trae',
+      name: '运行时 Trae 猫',
+      displayName: '运行时 Trae 猫',
+      client: 'trae',
+      accountRef: 'trae',
+      defaultModel: 'GLM-5',
+      roleDescription: '审查',
+    });
   });
 
   it('splitCommandArgs preserves quoted segments', () => {
@@ -268,7 +264,7 @@ describe('HubCatEditor', () => {
   it('renders normal member provider/model fields and saves to /api/cats', async () => {
     const onSaved = vi.fn(() => Promise.resolve());
     mockApiFetch.mockImplementation((path: string) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -339,17 +335,17 @@ describe('HubCatEditor', () => {
     expect(postCall).toBeTruthy();
     expect(postCall?.[1]?.method).toBe('POST');
     const payload = JSON.parse(String(postCall?.[1]?.body));
-    expect(payload.clientId).toBe('openai');
+    expect(payload.client).toBe('openai');
     expect(payload.catId).toMatch(/^cat-[a-z0-9]+$/);
     expect(payload.accountRef).toBe('codex-sponsor');
     expect(payload.defaultModel).toBe('gpt-5.4-mini');
     expect(onSaved).toHaveBeenCalledTimes(1);
   });
 
-  it('blocks creating opencode+api_key member without provider', async () => {
+  it('blocks creating opencode+api_key member without ocProviderName', async () => {
     const onSaved = vi.fn(() => Promise.resolve());
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -397,7 +393,7 @@ describe('HubCatEditor', () => {
         React.createElement(HubCatEditor, {
           open: true,
           draft: {
-            clientId: 'opencode',
+            client: 'opencode',
             accountRef: 'oc-apikey',
             defaultModel: 'glm-5',
           },
@@ -418,7 +414,7 @@ describe('HubCatEditor', () => {
     });
     await flushEffects();
 
-    // Save should be blocked — opencode+api_key without provider is rejected.
+    // Save should be blocked — opencode+api_key without ocProviderName is rejected.
     const postCall = mockApiFetch.mock.calls.find(([path, init]) => path === '/api/cats' && init?.method === 'POST');
     expect(postCall).toBeUndefined();
     expect(container.textContent).toContain('Provider 名称');
@@ -438,7 +434,7 @@ describe('HubCatEditor', () => {
             authType: 'oauth',
             kind: 'builtin',
             builtin: true,
-            clientId: 'anthropic',
+            client: 'anthropic',
             models: ['claude-opus-4-6', 'claude-sonnet-4-5'],
             hasApiKey: false,
             createdAt: '',
@@ -471,7 +467,7 @@ describe('HubCatEditor', () => {
             displayName: 'Opus',
             breedDisplayName: 'Ragdoll',
             nickname: '',
-            clientId: 'anthropic',
+            provider: 'anthropic',
             accountRef: 'claude',
             defaultModel: 'claude-opus-4-6',
             color: { primary: '#000', secondary: '#fff' },
@@ -501,7 +497,7 @@ describe('HubCatEditor', () => {
     expect(modelInputAfter.value).not.toBe('claude-opus-4-6');
   });
 
-  it('resets provider when switching account to prevent stale provider carry-over', async () => {
+  it('resets ocProviderName when switching account to prevent stale provider carry-over', async () => {
     mockApiFetch.mockResolvedValue(
       jsonResponse({
         projectPath: '/tmp/project',
@@ -548,10 +544,10 @@ describe('HubCatEditor', () => {
             displayName: 'OC MaaS',
             breedDisplayName: 'OpenCode',
             nickname: '',
-            clientId: 'opencode',
+            provider: 'opencode',
             accountRef: 'maas-key',
             defaultModel: 'maas/glm-5',
-            provider: 'maas',
+            ocProviderName: 'maas',
             color: { primary: '#000', secondary: '#fff' },
             mentionPatterns: ['@oc-maas'],
             avatar: '',
@@ -566,7 +562,7 @@ describe('HubCatEditor', () => {
     });
     await flushEffects();
 
-    // Initially provider (model provider name) should be 'maas'
+    // Initially ocProviderName should be 'maas'
     const providerInput = queryField<HTMLInputElement>(container, 'input[aria-label="OC Provider Name"]');
     expect(providerInput.value).toBe('maas');
 
@@ -574,7 +570,7 @@ describe('HubCatEditor', () => {
     await changeField(queryField(container, 'select[aria-label="认证信息"]'), 'deepseek-key', 'change');
     await flushEffects();
 
-    // provider should have been cleared (not still 'maas')
+    // ocProviderName should have been cleared (not still 'maas')
     const providerInputAfter = queryField<HTMLInputElement>(container, 'input[aria-label="OC Provider Name"]');
     expect(providerInputAfter.value).toBe('');
   });
@@ -600,7 +596,7 @@ describe('HubCatEditor', () => {
 
   it('shows the selected client builtin account together with all API key accounts', async () => {
     mockApiFetch.mockImplementation((path: string) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -662,6 +658,7 @@ describe('HubCatEditor', () => {
         displayName: 'Claude (OAuth)',
         name: 'Claude (OAuth)',
         authType: 'oauth',
+        protocol: 'anthropic',
         kind: 'builtin',
         builtin: true,
         mode: 'subscription',
@@ -676,6 +673,7 @@ describe('HubCatEditor', () => {
         displayName: 'Claude Sponsor',
         name: 'Claude Sponsor',
         authType: 'api_key',
+        protocol: 'anthropic',
         kind: 'api_key',
         builtin: false,
         mode: 'api_key',
@@ -690,10 +688,27 @@ describe('HubCatEditor', () => {
         displayName: 'Codex (OAuth)',
         name: 'Codex (OAuth)',
         authType: 'oauth',
+        protocol: 'openai',
         kind: 'builtin',
         builtin: true,
         mode: 'subscription',
         models: ['gpt-5.4'],
+        hasApiKey: false,
+        createdAt: '2026-03-18T00:00:00.000Z',
+        updatedAt: '2026-03-18T00:00:00.000Z',
+      },
+      {
+        id: 'trae-oauth',
+        provider: 'trae-oauth',
+        displayName: 'Trae (client-auth)',
+        name: 'Trae (client-auth)',
+        authType: 'oauth',
+        protocol: 'openai',
+        kind: 'builtin',
+        builtin: true,
+        mode: 'subscription',
+        client: 'trae',
+        models: ['GLM-5'],
         hasApiKey: false,
         createdAt: '2026-03-18T00:00:00.000Z',
         updatedAt: '2026-03-18T00:00:00.000Z',
@@ -704,6 +719,7 @@ describe('HubCatEditor', () => {
         displayName: 'Codex Sponsor',
         name: 'Codex Sponsor',
         authType: 'api_key',
+        protocol: 'openai',
         kind: 'api_key',
         builtin: false,
         mode: 'api_key',
@@ -725,6 +741,7 @@ describe('HubCatEditor', () => {
       'codex-sponsor',
     ]);
     expect(filterProfiles('dare', profiles).map((profile) => profile.id)).toEqual(['claude-sponsor', 'codex-sponsor']);
+    expect(filterProfiles('trae', profiles).map((profile) => profile.id)).toEqual(['trae-oauth']);
     expect(filterProfiles('opencode', profiles).map((profile) => profile.id)).toEqual([
       'claude-sponsor',
       'codex-sponsor',
@@ -736,8 +753,8 @@ describe('HubCatEditor', () => {
       id: 'runtime-codex',
       name: 'runtime-codex',
       displayName: '运行时缅因猫',
-      clientId: 'openai',
-      accountRef: 'codex-oauth',
+      provider: 'openai',
+      providerProfileId: 'codex-oauth',
       defaultModel: 'gpt-5.3-codex-spark',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@runtime-codex'],
@@ -747,7 +764,7 @@ describe('HubCatEditor', () => {
     } as CatData;
 
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -811,7 +828,7 @@ describe('HubCatEditor', () => {
       id: 'runtime-codex',
       name: 'runtime-codex',
       displayName: '运行时缅因猫',
-      clientId: 'openai',
+      provider: 'openai',
       defaultModel: 'gpt-5.4',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@runtime-codex'],
@@ -821,7 +838,7 @@ describe('HubCatEditor', () => {
     } as CatData;
 
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -901,7 +918,7 @@ describe('HubCatEditor', () => {
       id: 'runtime-opencode',
       name: 'runtime-opencode',
       displayName: '运行时 OpenCode',
-      clientId: 'opencode',
+      provider: 'opencode',
       defaultModel: 'claude-opus-4-6',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@runtime-opencode'],
@@ -911,7 +928,7 @@ describe('HubCatEditor', () => {
     } as CatData;
 
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -988,7 +1005,7 @@ describe('HubCatEditor', () => {
       id: 'runtime-opencode',
       name: 'runtime-opencode',
       displayName: '运行时 OpenCode',
-      clientId: 'opencode',
+      provider: 'opencode',
       defaultModel: 'claude-opus-4-6',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@runtime-opencode'],
@@ -1003,7 +1020,7 @@ describe('HubCatEditor', () => {
     });
 
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return profilesPromise;
       }
       if (path === '/api/config/session-strategy') {
@@ -1084,8 +1101,8 @@ describe('HubCatEditor', () => {
       id: 'runtime-codex',
       name: 'runtime-codex',
       displayName: '运行时缅因猫',
-      clientId: 'openai',
-      accountRef: 'codex-sponsor',
+      provider: 'openai',
+      providerProfileId: 'codex-sponsor',
       defaultModel: 'gpt-5.4',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@runtime-codex'],
@@ -1095,7 +1112,7 @@ describe('HubCatEditor', () => {
     } as CatData;
 
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -1161,8 +1178,8 @@ describe('HubCatEditor', () => {
       id: 'runtime-codex',
       name: 'runtime-codex',
       displayName: '运行时缅因猫',
-      clientId: 'openai',
-      accountRef: 'codex-sponsor',
+      provider: 'openai',
+      providerProfileId: 'codex-sponsor',
       defaultModel: 'gpt-5.4',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@runtime-codex'],
@@ -1172,7 +1189,7 @@ describe('HubCatEditor', () => {
     } as CatData;
 
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -1232,7 +1249,7 @@ describe('HubCatEditor', () => {
     );
     expect(patchCall).toBeTruthy();
     const payload = JSON.parse(String(patchCall?.[1]?.body));
-    expect(payload.clientId).toBe('antigravity');
+    expect(payload.client).toBe('antigravity');
     expect(payload.accountRef).toBeNull();
     expect(payload.mcpSupport).toBe(false);
   });
@@ -1242,8 +1259,8 @@ describe('HubCatEditor', () => {
       id: 'runtime-codex',
       name: 'runtime-codex',
       displayName: '运行时缅因猫',
-      clientId: 'openai',
-      accountRef: 'codex-oauth',
+      provider: 'openai',
+      providerProfileId: 'codex-oauth',
       defaultModel: 'gpt-5.4',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@runtime-codex'],
@@ -1259,7 +1276,7 @@ describe('HubCatEditor', () => {
     } as CatData;
 
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -1325,7 +1342,7 @@ describe('HubCatEditor', () => {
 
   it('requires all runtime budget fields when any budget value is provided', async () => {
     mockApiFetch.mockImplementation((path: string) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -1387,7 +1404,7 @@ describe('HubCatEditor', () => {
       id: 'runtime-antigravity',
       name: '运行时桥接猫',
       displayName: '运行时桥接猫',
-      clientId: 'antigravity',
+      provider: 'antigravity',
       defaultModel: 'gemini-bridge',
       commandArgs: ['chat', '--mode', 'agent'],
       color: { primary: '#0f766e', secondary: '#99f6e4' },
@@ -1399,7 +1416,7 @@ describe('HubCatEditor', () => {
     };
     const onSaved = vi.fn(() => Promise.resolve());
     mockApiFetch.mockImplementation((path: string) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(jsonResponse({ projectPath: '/tmp/project', activeProfileId: null, providers: [] }));
       }
       if (path === '/api/config/session-strategy') {
@@ -1488,7 +1505,7 @@ describe('HubCatEditor', () => {
       id: 'codex',
       name: '缅因猫',
       displayName: '缅因猫',
-      clientId: 'openai',
+      provider: 'openai',
       defaultModel: 'gpt-5.4',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@codex'],
@@ -1499,7 +1516,7 @@ describe('HubCatEditor', () => {
     };
 
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(jsonResponse({ projectPath: '/tmp/project', activeProfileId: null, providers: [] }));
       }
       if (path === '/api/config/session-strategy') {
@@ -1527,8 +1544,8 @@ describe('HubCatEditor', () => {
       name: 'codex',
       displayName: '缅因猫',
       nickname: '砚砚',
-      clientId: 'openai',
-      accountRef: 'codex-sponsor',
+      provider: 'openai',
+      providerProfileId: 'codex-sponsor',
       defaultModel: 'gpt-5.4',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@codex', '@缅因猫'],
@@ -1556,7 +1573,7 @@ describe('HubCatEditor', () => {
 
     const onSaved = vi.fn(() => Promise.resolve());
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -1742,8 +1759,8 @@ describe('HubCatEditor', () => {
       id: 'codex',
       name: 'codex',
       displayName: '缅因猫',
-      clientId: 'openai',
-      accountRef: 'codex-sponsor',
+      provider: 'openai',
+      providerProfileId: 'codex-sponsor',
       defaultModel: 'gpt-5.4',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@codex', '@缅因猫'],
@@ -1759,7 +1776,7 @@ describe('HubCatEditor', () => {
     } as CatData;
 
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -1856,7 +1873,7 @@ describe('HubCatEditor', () => {
   it('shows Codex-only runtime controls for any Client=Codex and lets alias chips be removed', async () => {
     const onSaved = vi.fn(() => Promise.resolve());
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -1961,8 +1978,8 @@ describe('HubCatEditor', () => {
       id: 'codex',
       name: 'codex',
       displayName: '缅因猫',
-      clientId: 'openai',
-      accountRef: 'codex-sponsor',
+      provider: 'openai',
+      providerProfileId: 'codex-sponsor',
       defaultModel: 'gpt-5.4',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@codex'],
@@ -1972,7 +1989,7 @@ describe('HubCatEditor', () => {
     } as CatData;
 
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -2049,8 +2066,8 @@ describe('HubCatEditor', () => {
       name: 'codex',
       displayName: '缅因猫',
       nickname: '旧昵称',
-      clientId: 'openai',
-      accountRef: 'codex-sponsor',
+      provider: 'openai',
+      providerProfileId: 'codex-sponsor',
       defaultModel: 'gpt-5.4',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@codex'],
@@ -2060,7 +2077,7 @@ describe('HubCatEditor', () => {
     } as CatData;
 
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -2139,8 +2156,8 @@ describe('HubCatEditor', () => {
       name: 'codex',
       displayName: '缅因猫',
       nickname: '旧昵称',
-      clientId: 'openai',
-      accountRef: 'codex-sponsor',
+      provider: 'openai',
+      providerProfileId: 'codex-sponsor',
       defaultModel: 'gpt-5.4',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@codex'],
@@ -2150,7 +2167,7 @@ describe('HubCatEditor', () => {
     } as CatData;
 
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -2240,8 +2257,8 @@ describe('HubCatEditor', () => {
       name: 'codex',
       displayName: '缅因猫',
       nickname: '旧昵称',
-      clientId: 'openai',
-      accountRef: 'codex-sponsor',
+      provider: 'openai',
+      providerProfileId: 'codex-sponsor',
       defaultModel: 'gpt-5.4',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@codex'],
@@ -2252,7 +2269,7 @@ describe('HubCatEditor', () => {
 
     let configPatchCount = 0;
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',
@@ -2388,8 +2405,8 @@ describe('HubCatEditor', () => {
       name: 'codex',
       displayName: '缅因猫',
       nickname: '旧昵称',
-      clientId: 'openai',
-      accountRef: 'codex-sponsor',
+      provider: 'openai',
+      providerProfileId: 'codex-sponsor',
       defaultModel: 'gpt-5.4',
       color: { primary: '#5B8C5A', secondary: '#D4E6D3' },
       mentionPatterns: ['@codex'],
@@ -2399,7 +2416,7 @@ describe('HubCatEditor', () => {
     } as CatData;
 
     mockApiFetch.mockImplementation((path: string, init?: RequestInit) => {
-      if (path === '/api/accounts') {
+      if (path === '/api/provider-profiles') {
         return Promise.resolve(
           jsonResponse({
             projectPath: '/tmp/project',

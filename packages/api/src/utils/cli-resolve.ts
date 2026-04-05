@@ -77,6 +77,7 @@ export function formatCliNotFoundError(command: string): string {
     codex: 'npm install -g @openai/codex',
     gemini: 'npm install -g @google/gemini-cli',
     opencode: 'npm install -g opencode',
+    'trae-cli': 'install the Trae CLI and make sure `trae-cli` is on PATH',
   };
   const hint = installHints[command] ?? `install the "${command}" CLI`;
   return `${command} CLI 未找到。请先运行 \`${hint}\` 安装，再重试。`;

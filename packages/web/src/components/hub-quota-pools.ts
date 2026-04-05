@@ -25,6 +25,7 @@ const BUILTIN_CLIENT_LABELS: Record<BuiltinAccountClient, string> = {
   openai: 'Codex',
   google: 'Gemini',
   dare: 'Dare',
+  trae: 'Trae',
   opencode: 'OpenCode',
 };
 
@@ -33,6 +34,7 @@ const BUILTIN_ACCOUNT_IDS: Record<BuiltinAccountClient, string> = {
   openai: 'codex',
   google: 'gemini',
   dare: 'dare',
+  trae: 'trae',
   opencode: 'opencode',
 };
 
@@ -46,6 +48,8 @@ function builtinDisplayName(client: BuiltinAccountClient): string {
       return 'Gemini (OAuth)';
     case 'dare':
       return 'Dare (client-auth)';
+    case 'trae':
+      return 'Trae (client-auth)';
     case 'opencode':
       return 'OpenCode (client-auth)';
   }
@@ -69,6 +73,8 @@ function fallbackAccountRef(cat: CatData): string | null {
       return 'gemini';
     case 'dare':
       return 'dare';
+    case 'trae':
+      return 'trae';
     case 'opencode':
       return 'opencode';
     default:
@@ -109,6 +115,8 @@ function builtinEmptyText(accountId: string): string {
       return '暂无数据（需 ClaudeBar 推送）';
     case 'dare':
       return 'Dare 不单独上报官方额度，实际额度取决于绑定账号';
+    case 'trae':
+      return 'Trae 不单独上报官方额度，实际额度取决于本地客户端认证状态';
     case 'opencode':
       return 'OpenCode 不单独上报官方额度，实际额度取决于绑定账号';
     default:
@@ -168,7 +176,7 @@ export function buildAccountQuotaGroups(
     {
       id: 'builtin',
       title: '内置账号额度（按账号配置）',
-      description: '固定内置账号包括 Claude / Codex / Gemini / Dare / OpenCode，每个账号下方反向显示绑定成员。',
+      description: '固定内置账号包括 Claude / Codex / Gemini / Dare / Trae / OpenCode，每个账号下方反向显示绑定成员。',
       pools: builtinPools,
     },
     {

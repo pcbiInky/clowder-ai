@@ -56,7 +56,7 @@ const cliSchema = z.object({
   effort: cliEffortSchema.nullable().optional(),
 });
 
-const clientSchema = z.enum(['anthropic', 'openai', 'google', 'dare', 'antigravity', 'opencode']);
+const clientSchema = z.enum(['anthropic', 'openai', 'google', 'dare', 'trae', 'antigravity', 'opencode']);
 const catIdSchema = z
   .string()
   .min(1)
@@ -192,6 +192,8 @@ function defaultCliForClient(client: ClientId): { command: string; outputFormat:
       return { command: 'gemini', outputFormat: 'stream-json' };
     case 'dare':
       return { command: 'dare', outputFormat: 'json' };
+    case 'trae':
+      return { command: 'trae-cli', outputFormat: 'json' };
     case 'opencode':
       return { command: 'opencode', outputFormat: 'json' };
     case 'antigravity':
