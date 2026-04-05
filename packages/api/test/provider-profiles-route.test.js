@@ -154,6 +154,50 @@ describe('provider profiles routes', () => {
     }
   });
 
+  it('PATCH /api/provider-profiles/:id creates missing Trae builtin account so models persist', async () => {
+    const Fastify = (await import('fastify')).default;
+    const { providerProfilesRoutes } = await import('../dist/routes/provider-profiles.js');
+    const app = Fastify();
+    await app.register(providerProfilesRoutes);
+    await app.ready();
+
+    const projectDir = await makeTmpDir('trae-patch-create');
+    setGlobalRoot(projectDir);
+    try {
+      const patchRes = await app.inject({
+        method: 'PATCH',
+        url: '/api/provider-profiles/trae',
+        headers: { ...AUTH_HEADERS, 'content-type': 'application/json' },
+        payload: JSON.stringify({
+          projectPath: projectDir,
+          displayName: 'Trae (client-auth)',
+          models: ['GLM-5'],
+        }),
+      });
+      assert.equal(patchRes.statusCode, 200);
+      const patched = patchRes.json();
+      assert.equal(patched.profile.id, 'trae');
+      assert.equal(patched.profile.client, 'trae');
+      assert.equal(patched.profile.builtin, true);
+      assert.deepEqual(patched.profile.models, ['GLM-5']);
+
+      const listRes = await app.inject({
+        method: 'GET',
+        url: `/api/provider-profiles?projectPath=${encodeURIComponent(projectDir)}`,
+        headers: AUTH_HEADERS,
+      });
+      assert.equal(listRes.statusCode, 200);
+      const trae = listRes.json().providers.find((profile) => profile.id === 'trae');
+      assert.ok(trae, 'Trae builtin account should be listed after PATCH');
+      assert.equal(trae.client, 'trae');
+      assert.deepEqual(trae.models, ['GLM-5']);
+    } finally {
+      restoreGlobalRoot();
+      await rm(projectDir, { recursive: true, force: true });
+      await app.close();
+    }
+  });
+
   it('POST /api/provider-profiles/:id/test validates api_key profile via fetch', async () => {
     const Fastify = (await import('fastify')).default;
     const { providerProfilesRoutes } = await import('../dist/routes/provider-profiles.js');

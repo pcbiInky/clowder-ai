@@ -748,6 +748,53 @@ describe('HubCatEditor', () => {
     ]);
   });
 
+  it('shows fallback Trae builtin binding even when provider-profiles API omits it', async () => {
+    mockApiFetch.mockImplementation((path: string) => {
+      if (path === '/api/provider-profiles') {
+        return Promise.resolve(
+          jsonResponse({
+            projectPath: '/tmp/project',
+            activeProfileId: 'claude-oauth',
+            providers: [
+              {
+                id: 'claude-oauth',
+                provider: 'claude-oauth',
+                displayName: 'Claude (OAuth)',
+                name: 'Claude (OAuth)',
+                authType: 'oauth',
+                protocol: 'anthropic',
+                builtin: true,
+                mode: 'subscription',
+                models: ['claude-opus-4-6'],
+                hasApiKey: false,
+                createdAt: '2026-03-18T00:00:00.000Z',
+                updatedAt: '2026-03-18T00:00:00.000Z',
+              },
+            ],
+          }),
+        );
+      }
+      if (path === '/api/cats') {
+        return Promise.resolve(jsonResponse({ cat: { id: 'runtime-trae' } }, 201));
+      }
+      throw new Error(`Unexpected apiFetch path: ${path}`);
+    });
+
+    await act(async () => {
+      root.render(React.createElement(HubCatEditor, { open: true, onClose: vi.fn(), onSaved: vi.fn() }));
+    });
+    await flushEffects();
+
+    await changeField(queryField(container, 'select[aria-label="Client"]'), 'trae', 'change');
+    await flushEffects();
+
+    const accountSelect = queryField<HTMLSelectElement>(container, 'select[aria-label="认证信息"]');
+    const labels = Array.from(accountSelect.options).map((option) => option.textContent);
+    expect(labels).toContain('Trae (client-auth)（内置）');
+    await changeField(accountSelect, 'trae', 'change');
+    expect(accountSelect.value).toBe('trae');
+  });
+
   it('preserves existing model when it is not listed in provider defaults', async () => {
     const existingCat = {
       id: 'runtime-codex',

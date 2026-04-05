@@ -45,6 +45,25 @@ function accountToView(id: string, account: AccountConfig, apiKeyPresent: boolea
   };
 }
 
+function missingBuiltinAccount(id: string): AccountConfig | null {
+  switch (id) {
+    case 'claude':
+      return { authType: 'oauth', protocol: 'anthropic', displayName: 'Claude (OAuth)' };
+    case 'codex':
+      return { authType: 'oauth', protocol: 'openai', displayName: 'Codex (OAuth)' };
+    case 'gemini':
+      return { authType: 'oauth', protocol: 'google', displayName: 'Gemini (OAuth)' };
+    case 'dare':
+      return { authType: 'oauth', protocol: 'openai', displayName: 'Dare (client-auth)' };
+    case 'trae':
+      return { authType: 'oauth', protocol: 'openai', displayName: 'Trae (client-auth)' };
+    case 'opencode':
+      return { authType: 'oauth', protocol: 'anthropic', displayName: 'OpenCode (client-auth)' };
+    default:
+      return null;
+  }
+}
+
 /** Derive a slug-like ID from display name, avoiding collisions with existing accounts. */
 function deriveAccountId(displayName: string, existingIds: Set<string>): string {
   const seed =
@@ -344,7 +363,7 @@ export const providerProfilesRoutes: FastifyPluginAsync<ProviderProfilesRoutesOp
     const params = request.params as { profileId: string };
 
     try {
-      const existing = readCatalogAccounts(projectRoot)[params.profileId];
+      const existing = readCatalogAccounts(projectRoot)[params.profileId] ?? missingBuiltinAccount(params.profileId);
       if (!existing) {
         reply.status(404);
         return { error: `Account "${params.profileId}" not found` };

@@ -25,6 +25,7 @@ import {
 import { AccountSection, IdentitySection, RoutingSection } from './hub-cat-editor.sections';
 import { AdvancedRuntimeSection } from './hub-cat-editor-advanced';
 import { PersistenceBanner } from './hub-cat-editor-fields';
+import { ensureBuiltinProviderProfiles } from './hub-accounts.view';
 import type { CatStrategyEntry } from './hub-strategy-types';
 import { useConfirm } from './useConfirm';
 
@@ -56,7 +57,13 @@ export function HubCatEditor({ cat, draft, open, onClose, onSaved }: HubCatEdito
   const [codexSettings, setCodexSettings] = useState<CodexRuntimeSettings | null>(null);
   const [codexSettingsBaseline, setCodexSettingsBaseline] = useState<CodexRuntimeSettings | null>(null);
 
-  const availableProfiles = useMemo(() => filterAccounts(form.clientId, profiles), [form.clientId, profiles]);
+  const normalizedProfiles = useMemo(() => {
+    if (form.clientId === 'google' || form.clientId === 'trae') {
+      return ensureBuiltinProviderProfiles(profiles);
+    }
+    return profiles;
+  }, [form.clientId, profiles]);
+  const availableProfiles = useMemo(() => filterAccounts(form.clientId, normalizedProfiles), [form.clientId, normalizedProfiles]);
   const selectedProfile = useMemo(
     () => availableProfiles.find((profile) => profile.id === form.accountRef) ?? null,
     [availableProfiles, form.accountRef],
