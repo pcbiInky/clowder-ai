@@ -123,6 +123,16 @@ function currentTurnMessages(messages: TraeMessage[]): TraeMessage[] {
   return lastUserIndex >= 0 ? messages.slice(lastUserIndex + 1) : messages;
 }
 
+function parseBufferedPayload(lines: readonly string[]): TraePayload | null {
+  if (lines.length === 0) return null;
+  try {
+    const parsed = JSON.parse(lines.join('\n')) as unknown;
+    return isTraePayload(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export class TraeAgentService implements AgentService {
   readonly catId: CatId;
   private readonly model: string;
@@ -182,6 +192,7 @@ export class TraeAgentService implements AgentService {
         : spawnCli(cliOpts, this.spawnFn ? { spawnFn: this.spawnFn } : undefined);
 
       let sawPayload = false;
+      const bufferedParseLines: string[] = [];
       for await (const event of events) {
         if (isCliTimeout(event)) {
           yield {
@@ -238,13 +249,7 @@ export class TraeAgentService implements AgentService {
           continue;
         }
         if (isParseError(event)) {
-          yield {
-            type: 'error',
-            catId: this.catId,
-            error: 'Trae CLI returned invalid JSON',
-            metadata,
-            timestamp: Date.now(),
-          };
+          bufferedParseLines.push(event.line);
           continue;
         }
         if (!isTraePayload(event)) {
@@ -259,59 +264,25 @@ export class TraeAgentService implements AgentService {
         }
 
         sawPayload = true;
+        bufferedParseLines.length = 0;
         const payload = event as TraePayload;
-        const usage = toUsage(payload);
-        if (usage) metadata.usage = usage;
+        yield* this.messagesFromPayload(payload, metadata);
+      }
 
-        for (const state of payload.agent_states ?? []) {
-          for (const message of currentTurnMessages(state.messages ?? [])) {
-            if (message.role === 'assistant') {
-              for (const toolCall of message.tool_calls ?? []) {
-                const toolName = toolCall.function?.name?.trim();
-                if (!toolName) continue;
-                yield {
-                  type: 'tool_use',
-                  catId: this.catId,
-                  toolName,
-                  toolInput: parseToolInput(toolCall.function?.arguments),
-                  metadata,
-                  timestamp: Date.now(),
-                };
-              }
-              continue;
-            }
-            if (message.role === 'tool') {
-              yield {
-                type: 'tool_result',
-                catId: this.catId,
-                content: normalizeToolResultContent(message.content),
-                metadata,
-                timestamp: Date.now(),
-              };
-            }
-          }
-        }
-
-        const finalText = normalizeTextContent(payload.message?.content);
-        if (finalText) {
+      if (!sawPayload) {
+        const payload = parseBufferedPayload(bufferedParseLines);
+        if (payload) {
+          sawPayload = true;
+          yield* this.messagesFromPayload(payload, metadata);
+        } else {
           yield {
-            type: 'text',
+            type: 'error',
             catId: this.catId,
-            content: finalText,
+            error: 'Trae CLI returned invalid JSON',
             metadata,
             timestamp: Date.now(),
           };
         }
-      }
-
-      if (!sawPayload) {
-        yield {
-          type: 'error',
-          catId: this.catId,
-          error: 'Trae CLI returned invalid JSON',
-          metadata,
-          timestamp: Date.now(),
-        };
       }
       yield { type: 'done', catId: this.catId, metadata, timestamp: Date.now() };
     } catch (err) {
@@ -323,6 +294,51 @@ export class TraeAgentService implements AgentService {
         timestamp: Date.now(),
       };
       yield { type: 'done', catId: this.catId, metadata, timestamp: Date.now() };
+    }
+  }
+
+  private *messagesFromPayload(payload: TraePayload, metadata: MessageMetadata): Iterable<AgentMessage> {
+    const usage = toUsage(payload);
+    if (usage) metadata.usage = usage;
+
+    for (const state of payload.agent_states ?? []) {
+      for (const message of currentTurnMessages(state.messages ?? [])) {
+        if (message.role === 'assistant') {
+          for (const toolCall of message.tool_calls ?? []) {
+            const toolName = toolCall.function?.name?.trim();
+            if (!toolName) continue;
+            yield {
+              type: 'tool_use',
+              catId: this.catId,
+              toolName,
+              toolInput: parseToolInput(toolCall.function?.arguments),
+              metadata,
+              timestamp: Date.now(),
+            };
+          }
+          continue;
+        }
+        if (message.role === 'tool') {
+          yield {
+            type: 'tool_result',
+            catId: this.catId,
+            content: normalizeToolResultContent(message.content),
+            metadata,
+            timestamp: Date.now(),
+          };
+        }
+      }
+    }
+
+    const finalText = normalizeTextContent(payload.message?.content);
+    if (finalText) {
+      yield {
+        type: 'text',
+        catId: this.catId,
+        content: finalText,
+        metadata,
+        timestamp: Date.now(),
+      };
     }
   }
 

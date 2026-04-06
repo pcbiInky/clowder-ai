@@ -307,6 +307,37 @@ describe('TraeAgentService', () => {
     assert.match(error.error, /Trae CLI returned invalid JSON/i);
   });
 
+  test('parses pretty-printed JSON output from Trae CLI stdout', async () => {
+    const proc = createMockProcess();
+    const spawnFn = mock.fn(() => proc);
+    const service = new TraeAgentService({ catId: 'trae', spawnFn, model: 'GLM-5' });
+
+    const promise = collect(service.invoke('Reply with exactly hi'));
+    emitTraeStdout(proc, JSON.stringify(SUCCESS_PAYLOAD, null, 2));
+    const messages = await promise;
+
+    const errors = messages.filter((msg) => msg.type === 'error');
+    assert.equal(errors.length, 0);
+    const text = messages.find((msg) => msg.type === 'text');
+    assert.ok(text);
+    assert.equal(text.content, 'hi');
+    assert.equal(messages.at(-1)?.type, 'done');
+  });
+
+  test('emits only one invalid JSON error for multiline non-JSON stdout', async () => {
+    const proc = createMockProcess();
+    const spawnFn = mock.fn(() => proc);
+    const service = new TraeAgentService({ catId: 'trae', spawnFn, model: 'GLM-5' });
+
+    const promise = collect(service.invoke('Broken'));
+    emitTraeStdout(proc, '{\nnot-json\nstill-bad\n}');
+    const messages = await promise;
+
+    const errors = messages.filter((msg) => msg.type === 'error');
+    assert.equal(errors.length, 1);
+    assert.match(errors[0].error, /Trae CLI returned invalid JSON/i);
+  });
+
   test('yields error + done on CLI exit failure', async () => {
     const proc = createMockProcess(1);
     const spawnFn = mock.fn(() => proc);
