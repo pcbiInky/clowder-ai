@@ -460,7 +460,7 @@ async function toCatResponse(
         }
       : null,
     source: metadata.source,
-    adapterMode: cat.clientId === 'google' ? (getAcpConfig(cat.id as string) ? 'acp' : 'cli') : undefined,
+    adapterMode: (cat.clientId === 'google' || cat.clientId === 'trae') ? (getAcpConfig(cat.id as string) ? 'acp' : 'cli') : undefined,
   };
 }
 

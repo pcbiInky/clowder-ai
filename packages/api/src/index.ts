@@ -790,6 +790,50 @@ async function main(): Promise<void> {
           }
           break;
         }
+        case 'trae': {
+          const acpConfig = getAcpConfig(id);
+          if (acpConfig) {
+            const { TraeAcpAdapter } = await import(
+              './domains/cats/services/agents/providers/acp/TraeAcpAdapter.js'
+            );
+            const { AcpProcessPool } = await import('./domains/cats/services/agents/providers/acp/AcpProcessPool.js');
+            const { AcpClient } = await import('./domains/cats/services/agents/providers/acp/AcpClient.js');
+            const acpProjectRoot = findMonorepoRoot();
+            const poolKey = { projectPath: acpProjectRoot, providerProfile: id };
+            if (!acpPoolRegistry.has(id)) {
+              const pool = new AcpProcessPool(
+                {
+                  maxLiveProcesses: acpConfig.pool?.maxLiveProcesses ?? 3,
+                  idleTtlMs: acpConfig.pool?.idleTtlMs ?? 5 * 60 * 1000,
+                  healthCheckIntervalMs: 30_000,
+                },
+                acpConfig,
+                () =>
+                  new AcpClient({
+                    command: acpConfig.command,
+                    args: acpConfig.startupArgs,
+                    cwd: acpProjectRoot,
+                  }),
+              );
+              acpPoolRegistry.set(id, pool);
+            }
+            const { resolveAcpMcpServers } = await import(
+              './domains/cats/services/agents/providers/acp/acp-mcp-resolver.js'
+            );
+            const mcpServers = resolveAcpMcpServers(acpProjectRoot, acpConfig.mcpWhitelist ?? []);
+            service = new TraeAcpAdapter({
+              catId,
+              pool: acpPoolRegistry.get(id)!,
+              poolKey,
+              projectRoot: acpProjectRoot,
+              mcpServers,
+            });
+          } else {
+            app.log.warn(`[api] Trae cat "${id}" has no ACP config — Trae requires ACP. It will not be routable.`);
+            continue;
+          }
+          break;
+        }
         case 'dare':
           service = new DareAgentService({ catId });
           break;

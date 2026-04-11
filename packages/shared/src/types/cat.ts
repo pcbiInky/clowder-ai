@@ -11,7 +11,7 @@ import { createCatId } from './ids.js';
  * CLI client identity used to invoke a cat (e.g. 'anthropic' → claude CLI, 'openai' → codex CLI).
  * Renamed from CatProvider in F340 P5.
  */
-export type ClientId = 'anthropic' | 'openai' | 'google' | 'dare' | 'antigravity' | 'opencode' | 'a2a';
+export type ClientId = 'anthropic' | 'openai' | 'google' | 'trae' | 'dare' | 'antigravity' | 'opencode' | 'a2a';
 
 /** @deprecated F340: Use {@link ClientId} instead. Kept as alias for backward compatibility. */
 export type CatProvider = ClientId;

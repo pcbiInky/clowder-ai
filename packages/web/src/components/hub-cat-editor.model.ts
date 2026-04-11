@@ -4,7 +4,7 @@ import type { BuiltinAccountClient, ProfileItem } from './hub-accounts.types';
 import type { CatStrategyEntry, StrategyType } from './hub-strategy-types';
 
 /** F340 P5: Renamed from ClientValue → ClientId (aligned with shared type). */
-export type ClientId = 'anthropic' | 'openai' | 'google' | 'dare' | 'opencode' | 'antigravity';
+export type ClientId = 'anthropic' | 'openai' | 'google' | 'trae' | 'dare' | 'opencode' | 'antigravity';
 /** @deprecated F340: Use {@link ClientId} instead. */
 export type ClientValue = ClientId;
 export type SessionChainValue = 'true' | 'false';
@@ -67,6 +67,7 @@ export const CLIENT_OPTIONS: Array<{ value: ClientId; label: string }> = [
   { value: 'anthropic', label: 'Claude' },
   { value: 'openai', label: 'Codex' },
   { value: 'google', label: 'Gemini' },
+  { value: 'trae', label: 'Trae CLI' },
   { value: 'dare', label: 'Dare' },
   { value: 'opencode', label: 'OpenCode' },
   { value: 'antigravity', label: 'Antigravity' },
