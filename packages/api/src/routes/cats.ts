@@ -56,7 +56,7 @@ const cliSchema = z.object({
   effort: cliEffortSchema.nullable().optional(),
 });
 
-const clientSchema = z.enum(['anthropic', 'openai', 'google', 'dare', 'antigravity', 'opencode']);
+const clientSchema = z.enum(['anthropic', 'openai', 'google', 'trae', 'dare', 'antigravity', 'opencode']);
 const catIdSchema = z
   .string()
   .min(1)
@@ -194,6 +194,8 @@ function defaultCliForClient(client: ClientId): { command: string; outputFormat:
       return { command: 'dare', outputFormat: 'json' };
     case 'opencode':
       return { command: 'opencode', outputFormat: 'json' };
+    case 'trae':
+      return { command: 'trae-cli', outputFormat: 'stream-json' };
     case 'antigravity':
       return { command: 'antigravity', outputFormat: 'json' };
     case 'a2a':
@@ -610,6 +612,7 @@ export const catsRoutes: FastifyPluginAsync = async (app) => {
             (body.clientId === 'anthropic' ||
               body.clientId === 'openai' ||
               body.clientId === 'google' ||
+              body.clientId === 'trae' ||
               body.clientId === 'opencode'),
           cli: resolvedCli,
           ...(body.cliConfigArgs ? { cliConfigArgs: body.cliConfigArgs } : {}),
