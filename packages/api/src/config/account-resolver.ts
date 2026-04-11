@@ -10,7 +10,7 @@ import { readCredential } from './credentials.js';
 
 // ── Types surviving from provider-profiles.types.ts (F136 Phase 4d) ──
 
-export type BuiltinAccountClient = Extract<ClientId, 'anthropic' | 'openai' | 'google' | 'dare' | 'opencode'>;
+export type BuiltinAccountClient = Extract<ClientId, 'anthropic' | 'openai' | 'google' | 'trae' | 'dare' | 'opencode'>;
 export type ProviderProfileKind = 'builtin' | 'api_key';
 
 export interface RuntimeProviderProfile {
@@ -37,6 +37,7 @@ export function resolveBuiltinClientForProvider(provider: ClientId): BuiltinAcco
     case 'anthropic':
     case 'openai':
     case 'google':
+    case 'trae':
     case 'dare':
     case 'opencode':
       return provider;
@@ -53,6 +54,7 @@ const LEGACY_BUILTIN_IDS: Record<BuiltinAccountClient, string> = {
   google: 'gemini',
   dare: 'dare',
   opencode: 'opencode',
+  trae: 'trae',
 };
 
 export function builtinAccountIdForClient(client: BuiltinAccountClient): string {
@@ -86,6 +88,8 @@ const BUILTIN_ACCOUNT_MAP: Record<string, { client: BuiltinAccountClient; protoc
   builtin_dare: { client: 'dare', protocol: 'openai' },
   opencode: { client: 'opencode', protocol: 'anthropic' },
   builtin_opencode: { client: 'opencode', protocol: 'anthropic' },
+  trae: { client: 'trae', protocol: 'acp' },
+  builtin_trae: { client: 'trae', protocol: 'acp' },
 };
 
 /**

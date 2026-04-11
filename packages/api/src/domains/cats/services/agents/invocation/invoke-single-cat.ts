@@ -732,6 +732,7 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
       dare: 'openai',
       opencode: 'anthropic',
       openrouter: 'openai',
+      trae: 'acp',
     };
     let effectiveProtocol: string | null = provider ? (protocolForProvider[provider] ?? null) : null;
     if (provider === 'opencode') {

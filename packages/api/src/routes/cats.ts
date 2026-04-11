@@ -397,7 +397,10 @@ async function validateAccountBindingOrThrow(
   if (client === 'antigravity' && trimmedAccountRef) {
     throw new Error('antigravity client does not support accountRef');
   }
-  if (client !== 'antigravity' && !trimmedAccountRef) {
+  if (client === 'trae' && trimmedAccountRef) {
+    throw new Error('trae client does not support accountRef (uses local ACP)');
+  }
+  if (client !== 'antigravity' && client !== 'trae' && !trimmedAccountRef) {
     throw new Error(`client "${client}" requires a provider binding`);
   }
   if (!trimmedAccountRef) return;
