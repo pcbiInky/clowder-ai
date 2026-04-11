@@ -204,6 +204,7 @@ export type AccountProtocol = 'anthropic' | 'openai' | 'openai-responses' | 'goo
  */
 export interface AccountConfig {
   readonly authType: 'oauth' | 'api_key';
+  readonly protocol: AccountProtocol;
   readonly baseUrl?: string;
   readonly models?: readonly string[];
   readonly displayName?: string;

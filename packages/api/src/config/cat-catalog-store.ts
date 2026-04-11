@@ -148,7 +148,7 @@ function resolveSelectedVariants(
   if (binding.mode === 'api_key') {
     const selected =
       variants.find((variant) => variant.id === defaultVariantId) ??
-      variants.find((variant) => providerToBootstrapClient(variant.provider) != null);
+      variants.find((variant) => providerToBootstrapClient(variant.clientId ?? variant.provider) != null);
     if (!selected) return [];
     const explicitAccountRef = resolveExplicitVariantAccountRef(selected);
     const effectiveRef = explicitAccountRef ?? accountRef;
@@ -196,7 +196,7 @@ function readSeedMetadata(projectRoot: string): {
     for (const breed of template.breeds as unknown as Record<string, unknown>[]) {
       const variants = Array.isArray(breed.variants) ? (breed.variants as Record<string, unknown>[]) : [];
       for (const variant of variants) {
-        const client = providerToBootstrapClient(variant.provider);
+        const client = providerToBootstrapClient(variant.clientId ?? variant.provider);
         if (!client) continue;
         const catId =
           typeof variant.catId === 'string' ? variant.catId : typeof breed.catId === 'string' ? breed.catId : null;
@@ -228,7 +228,7 @@ function resolveLegacySeedBindingBackfill(
   for (const breed of catalog.breeds as unknown as Record<string, unknown>[]) {
     const variants = Array.isArray(breed.variants) ? (breed.variants as Record<string, unknown>[]) : [];
     for (const variant of variants) {
-      const client = providerToBootstrapClient(variant.provider);
+      const client = providerToBootstrapClient(variant.clientId ?? variant.provider);
       if (!client) continue;
 
       const catId =
@@ -281,7 +281,7 @@ function migrateExistingCatalogBindings(
   for (const breed of nextCatalog.breeds as unknown as Record<string, unknown>[]) {
     const variants = Array.isArray(breed.variants) ? (breed.variants as Record<string, unknown>[]) : [];
     for (const variant of variants) {
-      const client = providerToBootstrapClient(variant.provider);
+      const client = providerToBootstrapClient(variant.clientId ?? variant.provider);
       if (!client) continue;
       const catId =
         typeof variant.catId === 'string' ? variant.catId : typeof breed.catId === 'string' ? breed.catId : null;
@@ -316,7 +316,7 @@ function filterBootstrapCatalog(template: CatCafeConfig, projectRoot: string): C
 
   for (const rawBreed of template.breeds as unknown as Record<string, unknown>[]) {
     const variants = Array.isArray(rawBreed.variants) ? (rawBreed.variants as Record<string, unknown>[]) : [];
-    const firstClient = variants.map((variant) => providerToBootstrapClient(variant.provider)).find(Boolean) ?? null;
+    const firstClient = variants.map((variant) => providerToBootstrapClient(variant.clientId ?? variant.provider)).find(Boolean) ?? null;
     if (!firstClient) {
       selectedBreeds.push(rawBreed);
       for (const catId of collectBreedCatIds(rawBreed)) selectedCatIds.add(catId);

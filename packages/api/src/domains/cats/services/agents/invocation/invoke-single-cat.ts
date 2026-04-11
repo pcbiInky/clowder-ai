@@ -663,7 +663,7 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
     // Members bind to a concrete accountRef (builtin oauth account or generic api_key account).
     // Legacy providerProfileId is still read as a migration fallback.
     const catConfig = catRegistry.tryGet(catId as string)?.config;
-    const provider = catConfig?.provider;
+    const provider = catConfig?.clientId;
     const builtinClient = provider ? resolveBuiltinClientForProvider(provider) : null;
     const defaultModel = catConfig?.defaultModel?.trim() || undefined;
     // Account resolution, proxy registration, and runtime config always use the
@@ -842,7 +842,7 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
       (hasExplicitOcProvider || !getOpenCodeKnownModels().has(effectiveModel))
     ) {
       callbackEnv.CAT_CAFE_ANTHROPIC_MODEL_OVERRIDE = effectiveModel;
-      const apiType = deriveOpenCodeApiType(resolvedAccount.protocol, effectiveProviderName);
+      const apiType = deriveOpenCodeApiType(effectiveProviderName);
       const rawModels = resolvedAccount.models?.length ? resolvedAccount.models : [effectiveModel];
       openCodeRuntimeConfigDir = writeOpenCodeRuntimeConfig(projectRoot, catId as string, invocationId, {
         providerName: effectiveProviderName,

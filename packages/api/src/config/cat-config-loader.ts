@@ -14,6 +14,7 @@ import type {
   CatFeatures,
   CatId,
   CatVariant,
+  ClientId,
   CoCreatorConfig,
   ContextBudget,
   MissionHubSelfClaimScope,
@@ -36,11 +37,27 @@ const log = createModuleLogger('cat-config');
  */
 const DEFAULT_CAT_TEMPLATE_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..', 'cat-template.json');
 
+const clientIdSchema = z.enum(['anthropic', 'openai', 'google', 'dare', 'trae', 'antigravity', 'opencode', 'a2a']);
+const LEGACY_CLIENT_IDS = new Set<string>(clientIdSchema.options);
+
 const cliConfigSchema = z.object({
   command: z.string().min(1),
   outputFormat: z.string().min(1),
   defaultArgs: z.array(z.string()).optional(),
   effort: z.enum(['low', 'medium', 'high', 'max', 'xhigh']).optional(),
+});
+
+const acpConfigSchema = z.object({
+  command: z.string().min(1),
+  startupArgs: z.array(z.string().min(1)),
+  mcpWhitelist: z.array(z.string().min(1)).optional(),
+  supportsMultiplexing: z.boolean().optional(),
+  pool: z
+    .object({
+      maxLiveProcesses: z.number().int().positive().optional(),
+      idleTtlMs: z.number().int().positive().optional(),
+    })
+    .optional(),
 });
 
 const contextBudgetSchema = z.object({
@@ -55,51 +72,97 @@ const mentionPatternSchema = z.string().min(2).regex(/^@/, 'mentionPattern must 
 
 const colorSchema = z.object({ primary: z.string(), secondary: z.string() });
 
-const catVariantSchema = z.object({
-  id: z.string().min(1),
-  catId: z.string().min(1).optional(), // F32-b: variant-level catId
-  displayName: z.string().min(1).optional(), // F32-b: variant-level displayName
-  variantLabel: z.string().min(1).optional(), // F32-b P4: disambiguation label
-  mentionPatterns: z.array(mentionPatternSchema).optional(), // F32-b: variant-level mentions
-  accountRef: z.string().min(1).optional(), // F127: concrete account binding
-  providerProfileId: z.string().min(1).optional(), // Legacy migration path
-  provider: z.enum(['anthropic', 'openai', 'google', 'dare', 'trae', 'antigravity', 'opencode', 'a2a']),
-  defaultModel: z.string().min(1),
-  mcpSupport: z.boolean(),
-  cli: cliConfigSchema,
-  commandArgs: z.array(z.string().min(1)).optional(), // F127: explicit bridge args (e.g. Antigravity)
-  cliConfigArgs: z.array(z.string().min(1)).optional(), // F127: extra CLI args per member
-  ocProviderName: z
-    .string()
-    .trim()
-    .min(1, 'ocProviderName must not be blank')
-    .refine((v) => !v.includes('/'), 'ocProviderName must not contain "/"')
-    .optional(), // F189: opencode custom provider name (e.g. "maas")
-  roleDescription: z.string().min(1).optional(), // F127 review fix: allow variant-scoped roleDescription override
-  sessionChain: z.boolean().optional(), // F127 review fix: allow variant-scoped sessionChain override
-  personality: z.string().optional(),
-  strengths: z.array(z.string()).optional(),
-  avatar: z.string().min(1).optional(), // F32-b P4c: override breed avatar
-  color: colorSchema.optional(), // F32-b P4c: override breed color
-  contextBudget: contextBudgetSchema.optional(),
-  voiceConfig: z // F103: per-cat TTS voice configuration
-    .object({
-      voice: z.string().min(1),
-      langCode: z.string().min(1),
-      speed: z.number().positive().optional(),
-      refAudio: z.string().min(1).optional(),
-      refText: z.string().min(1).optional(),
-      instruct: z.string().min(1).optional(),
-      temperature: z.number().min(0).max(2).optional(),
-    })
-    .optional(),
-  teamStrengths: z.string().optional(), // F-Ground-3: human-readable strengths
-  caution: z.string().nullable().optional(), // F-Ground-3: null = explicit no-caution (R1 fix)
-});
+const catVariantSchema = z
+  .object({
+    id: z.string().min(1),
+    catId: z.string().min(1).optional(), // F32-b: variant-level catId
+    displayName: z.string().min(1).optional(), // F32-b: variant-level displayName
+    variantLabel: z.string().min(1).optional(), // F32-b P4: disambiguation label
+    mentionPatterns: z.array(mentionPatternSchema).optional(), // F32-b: variant-level mentions
+    accountRef: z.string().min(1).optional(), // F127: concrete account binding
+    providerProfileId: z.string().min(1).optional(), // Legacy migration path
+    clientId: clientIdSchema.optional(),
+    // Legacy config used `provider` for client identity; newer config uses it for
+    // OpenCode provider name. Keep both and normalize after parsing.
+    provider: z.string().min(1).optional(),
+    defaultModel: z.string().min(1),
+    mcpSupport: z.boolean(),
+    cli: cliConfigSchema,
+    acp: acpConfigSchema.optional(),
+    commandArgs: z.array(z.string().min(1)).optional(), // F127: explicit bridge args (e.g. Antigravity)
+    cliConfigArgs: z.array(z.string().min(1)).optional(), // F127: extra CLI args per member
+    ocProviderName: z
+      .string()
+      .trim()
+      .min(1, 'ocProviderName must not be blank')
+      .refine((v) => !v.includes('/'), 'ocProviderName must not contain "/"')
+      .optional(), // F189: opencode custom provider name (e.g. "maas")
+    roleDescription: z.string().min(1).optional(), // F127 review fix: allow variant-scoped roleDescription override
+    sessionChain: z.boolean().optional(), // F127 review fix: allow variant-scoped sessionChain override
+    personality: z.string().optional(),
+    strengths: z.array(z.string()).optional(),
+    avatar: z.string().min(1).optional(), // F32-b P4c: override breed avatar
+    color: colorSchema.optional(), // F32-b P4c: override breed color
+    contextBudget: contextBudgetSchema.optional(),
+    voiceConfig: z // F103: per-cat TTS voice configuration
+      .object({
+        voice: z.string().min(1),
+        langCode: z.string().min(1),
+        speed: z.number().positive().optional(),
+        refAudio: z.string().min(1).optional(),
+        refText: z.string().min(1).optional(),
+        instruct: z.string().min(1).optional(),
+        temperature: z.number().min(0).max(2).optional(),
+      })
+      .optional(),
+    teamStrengths: z.string().optional(), // F-Ground-3: human-readable strengths
+    caution: z.string().nullable().optional(), // F-Ground-3: null = explicit no-caution (R1 fix)
+  })
+  .superRefine((variant, ctx) => {
+    if (!variant.clientId && !variant.provider) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['clientId'],
+        message: 'clientId is required',
+      });
+    }
+  });
+
+export interface AcpConfig {
+  command: string;
+  startupArgs: string[];
+  mcpWhitelist?: string[];
+  supportsMultiplexing?: boolean;
+  pool?: {
+    maxLiveProcesses?: number;
+    idleTtlMs?: number;
+  };
+}
 
 type LegacyAwareCatVariant = CatVariant & {
   providerProfileId?: string;
+  // Legacy config field kept for backward compatibility.
+  ocProviderName?: string;
+  // Parsed-only ACP extension; not part of the shared schema yet.
+  acp?: AcpConfig;
+  // Loader accepts legacy configs that still encode client identity in `provider`.
+  provider?: string;
 };
+
+function normalizeVariantClientId(variant: { clientId?: ClientId; provider?: string }): ClientId {
+  if (variant.clientId) return variant.clientId;
+  if (variant.provider && LEGACY_CLIENT_IDS.has(variant.provider)) {
+    return variant.provider as ClientId;
+  }
+  throw new Error(`Variant is missing a valid clientId: ${JSON.stringify({ id: (variant as { id?: string }).id, provider: variant.provider })}`);
+}
+
+function normalizeVariantProviderName(variant: { clientId?: ClientId; provider?: string; ocProviderName?: string }): string | undefined {
+  if (variant.ocProviderName?.trim()) return variant.ocProviderName.trim();
+  if (!variant.provider?.trim()) return undefined;
+  if (!variant.clientId && LEGACY_CLIENT_IDS.has(variant.provider)) return undefined;
+  return variant.provider.trim();
+}
 
 /** F33 Phase 2: session strategy config (matches SessionStrategyConfig from shared).
  *  Exported for reuse by Phase 3 API route validation. */
@@ -410,13 +473,14 @@ export function toAllCatConfigs(config: CatCafeConfig): Record<string, CatConfig
       // R1 fix: null = "explicitly no caution" (don't inherit breed).
       // undefined (omitted) = inherit from breed. ?? treats null as nullish, so use !== undefined.
       const caution = variant.caution !== undefined ? variant.caution : breed.caution;
-      const projectedCommandArgs =
-        variant.commandArgs ??
-        (variant.provider === 'antigravity' && variant.cli?.defaultArgs && variant.cli.defaultArgs.length > 0
-          ? variant.cli.defaultArgs
-          : undefined);
-
-      const legacyVariant = variant as LegacyAwareCatVariant;
+        const legacyVariant = variant as LegacyAwareCatVariant;
+        const clientId = normalizeVariantClientId(legacyVariant);
+        const projectedCommandArgs =
+          variant.commandArgs ??
+          (clientId === 'antigravity' && variant.cli?.defaultArgs && variant.cli.defaultArgs.length > 0
+            ? variant.cli.defaultArgs
+            : undefined);
+        const providerName = normalizeVariantProviderName(legacyVariant);
 
       result[catId] = {
         id: createCatId(catId),
@@ -432,14 +496,15 @@ export function toAllCatConfigs(config: CatCafeConfig): Record<string, CatConfig
             ? { accountRef: legacyVariant.providerProfileId }
             : {}),
         ...(legacyVariant.providerProfileId != null ? { providerProfileId: legacyVariant.providerProfileId } : {}),
-        provider: variant.provider,
+        clientId,
+        ...(providerName != null ? { provider: providerName } : {}),
+        ...(legacyVariant.ocProviderName != null ? { ocProviderName: legacyVariant.ocProviderName } : {}),
         defaultModel: variant.defaultModel,
         mcpSupport: variant.mcpSupport,
         ...(projectedCommandArgs != null ? { commandArgs: projectedCommandArgs } : {}),
         ...(variant.cliConfigArgs != null && variant.cliConfigArgs.length > 0
           ? { cliConfigArgs: [...variant.cliConfigArgs] }
           : {}),
-        ...(variant.ocProviderName != null ? { ocProviderName: variant.ocProviderName } : {}),
         ...(variant.contextBudget != null ? { contextBudget: variant.contextBudget } : {}),
         roleDescription: variant.roleDescription ?? breed.roleDescription,
         personality: variant.personality ?? defaultVariant?.personality ?? '',
@@ -631,6 +696,19 @@ export function getMissionHubSelfClaimScope(catId: string, config?: CatCafeConfi
 // ── F32-b: Default cat resolution ─────────────────────────────────────
 
 let _defaultCatId: CatId | null = null;
+let _runtimeDefaultCatId: CatId | null = null;
+
+export function hasRuntimeDefaultCatOverride(): boolean {
+  return _runtimeDefaultCatId != null;
+}
+
+export function setRuntimeDefaultCatId(catId: string): void {
+  _runtimeDefaultCatId = createCatId(catId);
+}
+
+export function clearRuntimeDefaultCatId(): void {
+  _runtimeDefaultCatId = null;
+}
 
 /**
  * Get the default cat ID (= breeds[0].defaultVariantId's resolved catId).
@@ -639,6 +717,7 @@ let _defaultCatId: CatId | null = null;
  * F32-b R4: Explicit derivation from defaultVariantId — NOT registry order dependent.
  */
 export function getDefaultCatId(): CatId {
+  if (_runtimeDefaultCatId) return _runtimeDefaultCatId;
   if (_defaultCatId) return _defaultCatId;
 
   const config = getCachedConfig();
@@ -671,11 +750,26 @@ function buildCatIdToVariantIndex(config: CatCafeConfig): Map<string, CatVariant
   return index;
 }
 
+export function getAcpConfig(catId: string, config?: CatCafeConfig): AcpConfig | undefined {
+  const cfg = config ?? getCachedConfig();
+  if (!cfg) return undefined;
+
+  for (const breed of cfg.breeds) {
+    for (const variant of breed.variants) {
+      const resolvedCatId = variant.catId ?? breed.catId;
+      if (resolvedCatId !== catId) continue;
+      return (variant as LegacyAwareCatVariant).acp;
+    }
+  }
+
+  return undefined;
+}
+
 /** Effort level union across all CLI providers */
 export type CliEffortLevel = 'low' | 'medium' | 'high' | 'max' | 'xhigh';
 
 function normalizeCliEffortForProvider(
-  provider: CatVariant['provider'] | undefined,
+  provider: ClientId | undefined,
   effort: CliEffortLevel | undefined,
 ): CliEffortLevel | null {
   if (!effort) return null;
@@ -691,7 +785,11 @@ function normalizeCliEffortForProvider(
  *   codex (openai):     'xhigh'
  *   others:             'high'
  */
-export function getCatEffort(catId: string, config?: CatCafeConfig): CliEffortLevel {
+export function getCatEffort(
+  catId: string,
+  config?: CatCafeConfig,
+  providerHint?: ClientId,
+): CliEffortLevel {
   const cfg = config ?? getCachedConfig();
   if (!cfg) return 'max';
 
@@ -701,12 +799,16 @@ export function getCatEffort(catId: string, config?: CatCafeConfig): CliEffortLe
   }
 
   const variant = _catIdToVariant.get(catId);
-  const normalizedEffort = normalizeCliEffortForProvider(variant?.provider, variant?.cli.effort);
+  const normalizedEffort = normalizeCliEffortForProvider(
+    variant ? normalizeVariantClientId(variant as LegacyAwareCatVariant) : undefined,
+    variant?.cli.effort,
+  );
   if (normalizedEffort) return normalizedEffort;
 
   // Provider-aware defaults
-  if (variant?.provider === 'openai') return 'xhigh';
-  if (variant?.provider === 'anthropic') return 'max';
+  const variantClient = variant ? normalizeVariantClientId(variant as LegacyAwareCatVariant) : undefined;
+  if (variantClient === 'openai') return 'xhigh';
+  if (variantClient === 'anthropic') return 'max';
   return 'high';
 }
 

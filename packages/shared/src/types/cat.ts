@@ -3,14 +3,14 @@
  * 三只 AI 猫猫的类型定义和配置
  */
 
-import type { ContextBudget } from './cat-breed.js';
+import type { CliConfig, ContextBudget } from './cat-breed.js';
 import type { CatId, SessionId } from './ids.js';
 import { createCatId } from './ids.js';
 
 /**
- * AI provider behind a cat
+ * CLI client identity behind a cat.
  */
-export type CatProvider =
+export type ClientId =
   | 'anthropic'
   | 'openai'
   | 'google'
@@ -19,6 +19,9 @@ export type CatProvider =
   | 'antigravity'
   | 'opencode'
   | 'a2a';
+
+/** @deprecated F340: Use ClientId instead. */
+export type CatProvider = ClientId;
 
 /**
  * Cat status in the system
@@ -46,9 +49,11 @@ export interface CatConfig {
   readonly color: CatColor;
   readonly mentionPatterns: readonly string[];
   readonly accountRef?: string;
-  readonly provider: CatProvider;
+  /** F340 P5: CLI client identity (renamed from provider). */
+  readonly clientId: ClientId;
   readonly defaultModel: string;
   readonly mcpSupport: boolean;
+  readonly cli?: CliConfig;
   readonly commandArgs?: readonly string[];
   readonly contextBudget?: ContextBudget;
   readonly roleDescription: string;
@@ -71,7 +76,9 @@ export interface CatConfig {
   readonly sessionChain?: boolean;
   /** F127: Extra CLI --config key=value pairs passed to the client at invocation time. */
   readonly cliConfigArgs?: readonly string[];
-  /** F189: OpenCode custom provider name for api_key routing (runtime assembles provider/model). */
+  /** F340 P5: Model provider name for api_key routing. */
+  readonly provider?: string;
+  /** @deprecated F340 P5: Use provider instead. */
   readonly ocProviderName?: string;
 }
 
@@ -104,9 +111,15 @@ export const CAT_CONFIGS: Record<string, CatConfig> = {
       secondary: '#E8DFF5',
     },
     mentionPatterns: ['@opus', '@布偶猫', '@布偶', '@ragdoll', '@宪宪'],
-    provider: 'anthropic',
+    clientId: 'anthropic',
     defaultModel: 'claude-sonnet-4-5-20250929',
     mcpSupport: true,
+    cli: {
+      command: 'claude',
+      outputFormat: 'stream-json',
+      defaultArgs: ['--output-format', 'stream-json'],
+      effort: 'max',
+    },
     breedId: 'ragdoll',
     roleDescription: '主架构师和核心开发者，擅长深度思考和系统设计',
     personality: '温柔但有主见，喜欢深入分析问题，写代码快但注重质量',
@@ -122,9 +135,14 @@ export const CAT_CONFIGS: Record<string, CatConfig> = {
       secondary: '#D4E6D3',
     },
     mentionPatterns: ['@codex', '@缅因猫', '@缅因', '@maine', '@砚砚'],
-    provider: 'openai',
+    clientId: 'openai',
     defaultModel: 'codex',
     mcpSupport: false,
+    cli: {
+      command: 'codex',
+      outputFormat: 'json',
+      effort: 'xhigh',
+    },
     breedId: 'maine-coon',
     roleDescription: '代码审查专家，擅长安全分析、测试覆盖和代码质量把控',
     personality: '严谨认真，注重细节，会直言不讳地指出问题',
@@ -139,9 +157,14 @@ export const CAT_CONFIGS: Record<string, CatConfig> = {
       secondary: '#D6E9F8',
     },
     mentionPatterns: ['@gemini', '@暹罗猫', '@暹罗', '@siamese', '@暄罗猫', '@暄罗'],
-    provider: 'google',
+    clientId: 'google',
     defaultModel: 'gemini-2.5-pro',
     mcpSupport: false,
+    cli: {
+      command: 'gemini',
+      outputFormat: 'stream-json',
+      defaultArgs: [],
+    },
     breedId: 'siamese',
     roleDescription: '视觉设计师和创意顾问，擅长 UI/UX 设计和视觉表达',
     personality: '活泼有创意，善于用视觉语言表达想法，喜欢尝试新事物',

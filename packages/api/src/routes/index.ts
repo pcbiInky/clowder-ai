@@ -1,4 +1,4 @@
-export { accountsRoutes } from './accounts.js';
+export { providerProfilesRoutes as accountsRoutes } from './accounts.js';
 export { auditRoutes } from './audit.js';
 export { authorizationRoutes } from './authorization.js';
 export { backlogRoutes } from './backlog.js';

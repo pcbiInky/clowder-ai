@@ -89,12 +89,14 @@ function normalizeModels(models: readonly string[] | undefined): string[] | unde
 
 function canonicalizeAccount(account: AccountConfig): {
   authType: 'oauth' | 'api_key';
+  protocol: AccountConfig['protocol'];
   baseUrl?: string;
   displayName?: string;
   models?: string[];
 } {
   return {
     authType: account.authType,
+    protocol: account.protocol,
     ...(normalizeBaseUrl(account.baseUrl) ? { baseUrl: normalizeBaseUrl(account.baseUrl) } : {}),
     ...(normalizeDisplayName(account.displayName) ? { displayName: normalizeDisplayName(account.displayName) } : {}),
     ...(normalizeModels(account.models) ? { models: normalizeModels(account.models) } : {}),
@@ -107,6 +109,7 @@ function describeAccountConflict(existing: AccountConfig, incoming: AccountConfi
   const diffs: string[] = [];
 
   if (current.authType !== next.authType) diffs.push(`authType ${current.authType} vs ${next.authType}`);
+  if (current.protocol !== next.protocol) diffs.push(`protocol ${current.protocol} vs ${next.protocol}`);
   if ((current.baseUrl ?? '(none)') !== (next.baseUrl ?? '(none)')) {
     diffs.push(`baseUrl ${current.baseUrl ?? '(none)'} vs ${next.baseUrl ?? '(none)'}`);
   }
@@ -140,6 +143,35 @@ function inferLegacyAuthType(profile: Record<string, unknown>): AccountConfig['a
     normalizeLegacyAuthType(profile.kind) ??
     'oauth'
   );
+}
+
+function inferLegacyProtocol(id: string, profile: Record<string, unknown>): AccountConfig['protocol'] {
+  const normalizedId = id.trim().toLowerCase();
+  if (normalizedId === 'claude' || normalizedId === 'builtin_anthropic' || normalizedId === 'opencode') {
+    return 'anthropic';
+  }
+  if (normalizedId === 'gemini' || normalizedId === 'builtin_google') {
+    return 'google';
+  }
+  if (
+    normalizedId === 'codex' ||
+    normalizedId === 'builtin_openai' ||
+    normalizedId === 'dare' ||
+    normalizedId === 'trae'
+  ) {
+    return 'openai';
+  }
+
+  const baseUrl = String(profile.baseUrl ?? '').toLowerCase();
+  if (baseUrl.includes('anthropic')) return 'anthropic';
+  if (baseUrl.includes('googleapis.com') || baseUrl.includes('generativelanguage') || baseUrl.includes('gemini')) {
+    return 'google';
+  }
+
+  const models = Array.isArray(profile.models) ? profile.models.map((value) => String(value).toLowerCase()) : [];
+  if (models.some((model) => model.includes('claude'))) return 'anthropic';
+  if (models.some((model) => model.includes('gemini'))) return 'google';
+  return 'openai';
 }
 
 /** Merge source accounts into global, preserving existing keys. */
@@ -206,7 +238,8 @@ function migrateLegacyFrom(root: string, projectRoot?: string): void {
     const models = normalizeModels(Array.isArray(p.models) ? p.models.map(String) : undefined);
     // F340: protocol not migrated — derived at runtime from well-known account IDs.
     accounts[id] = {
-      authType: inferLegacyAuthType(p),
+        authType: inferLegacyAuthType(p),
+        protocol: inferLegacyProtocol(id, p),
       ...(displayName ? { displayName } : {}),
       ...(baseUrl ? { baseUrl } : {}),
       ...(models ? { models } : {}),
